@@ -43,25 +43,24 @@ static const char *locate_header_fun(const char *hdr, size_t *len, void *context
 
 static void cb(struct mg_connection *c, int ev, void *ev_data, void *fn_data) {
 	if (ev != MG_EV_HTTP_MSG) return;
+	app_write = write_fun_stub;
+	set_http_status_and_hdr = set_http_status_and_hdr_fun;
 
 	struct mg_http_message *hm = (struct mg_http_message *) ev_data;
 	appargs a = {.context1 = c,
 				 .context2 = hm,
 				 .request = hm->uri.ptr,
 				 .request_len = hm->uri.len,
-				 .appcontext = fn_data
+				 .appcontext = fn_data,
+				 .method = http_determine_method(hm->method.ptr, hm->method.len)
 	};
 	app_request(a);
 	mg_http_write_chunk(c, "", 0);
-	app_write = write_fun_stub;
-	set_http_status_and_hdr = set_http_status_and_hdr_fun;
 }
 
 int main() {
 	signal(SIGINT, signal_handler);
 	signal(SIGTERM, signal_handler);
-	app_write = write_fun_stub;
-	set_http_status_and_hdr = set_http_status_and_hdr_fun;
 	locate_header = locate_header_fun;
 
 	struct mg_mgr mgr;
