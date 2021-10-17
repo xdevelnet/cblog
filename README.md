@@ -41,6 +41,7 @@ sudo apt-get install libfcgi-dev nginx
 ```
 If you want to make project run via embedded web server mongoose:
 ```bash
+sudo apt-get install libev-dev
 git clone https://github.com/cesanta/mongoose.git
 ```
 
@@ -54,3 +55,39 @@ make obj
 Done! Now you can run your app via freshly created binary.
 
 Use external tools/software to controll process.
+
+## Feature tables
+
+Application features:
+
+|Feature|Status|Comment|
+|-------|------|-------|
+|application abstraction|Done|application code is independent from web server or any kind of layer|
+|supported backend engines|Done|**Mongoose:** allows to compile app and web server to single binary.<br />**Fastcgi (nginx):** Requires web server configuration|
+|Multiple template support|Done, but only one template is enabled|Abstracted in essb library that were written particularly for this project.<br />Two templates were already done|
+|Multiple L10n support|Done, but not enabled at all|Abstracted in tssb library that were written particularly for this project
+|Markdown pages|Planned|When user makes new blog record, app expects markdown format. It saves original .md and transforms it to html that will be included during runtime|
+|Tags support|Planned|Tags design are already present in my templates|
+|CI<br />Pre-built packages,<br />Docker images|Planned|CI done only for subprojects (ssb)|
+|Tests|Partially done|Done only for one module|
+|Pages|WIP|Only 404 page with proper template is done|
+
+Supported data storage:
+
+|Engine|Status|
+|------|------|
+|Files|Done|
+|MySQL|WIP|
+|SQLite|Planned|
+|Single file/<br />embedded storage|Planned|
+
+External tools/software/references:
+
+|Tool|Description|
+|----|-----------|
+|Nginx|Web server that were mainly used with fastcgi library.<br />https://nginx.org/|
+|Fastcgi|Interface that allows to move out from CGI and achieve great performance. Unfortunately, original site is down, only archive left:<br />https://web.archive.org/web/20060221235908/http://fastcgi.com/ <br />Active development is here:<br />https://github.com/FastCGI-Archives/fcgi2|
+|Mongoose|Web server that could be embedded in application. The easiest way to demonstrate app capabilities|
+|ssb (essb, tssb)|library that allows to parse special formatted ssb data in order to have a handy use in this project:<br />https://github.com/xdevelnet/ssb|
+|template2essb|application that transforms html templates to (e)ssb format:<br />https://github.com/xdevelnet/ssb|
+|tcsv2tssb|converter from csv data to (t)ssb format. Mainly used to make text translatios.<br />https://github.com/xdevelnet/tcsv2tssb|

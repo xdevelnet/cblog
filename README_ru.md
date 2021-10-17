@@ -41,6 +41,7 @@ sudo apt-get install libfcgi-dev nginx
 ```
 Если вы хотите чтобы проект работал через встраиваемый веб-сервер mongoose:
 ```bash
+sudo apt-get install libev-dev
 git clone https://github.com/cesanta/mongoose.git
 ```
 
