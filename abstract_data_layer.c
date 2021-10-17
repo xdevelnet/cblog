@@ -84,6 +84,22 @@ bool initialize_engine(enum datalayer_engines e, void *addr, void *context, cons
 	}
 }
 
+void deinitialize_engine(enum datalayer_engines e, void *context) {
+	switch (e) {
+#ifdef DATA_LAYER_MYSQL
+	case ENGINE_MYSQL:
+		break;
+#endif
+#ifdef DATA_LAYER_FILENO
+	case ENGINE_FILENO:
+		deinitialize_engine_fileno(context);
+		break;
+#endif
+	default:
+		break;
+	}
+}
+
 #if !defined(DATA_LAYER_MYSQL) && !defined(DATA_LAYER_FILENO)
 #error Please define at least one data layer engine!
 #endif

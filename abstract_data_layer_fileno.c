@@ -1,7 +1,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <string.h>
-#include <threads.h>
+#include <pthread.h>
 #include <sys/stat.h>
 #include <dirent.h>
 #include <iso646.h>
@@ -13,19 +13,23 @@ struct fileno_context {
 	const void *addr;
 };
 
-mtx_t scanmutex;
+pthread_mutex_t scanmutex;
 bool mutex_initialized = false;
 
 static bool initialize_fileno_context(const void *addr, void *context, const char **error) {
 	if (mutex_initialized == false) {
 		mutex_initialized = true;
-		mtx_init(&scanmutex, 0);
+		pthread_mutex_init(&scanmutex, 0);
 	}
 
 	struct fileno_context *ret = context;
 	memset(ret, 0, sizeof(struct fileno_context));
 	ret->addr = addr;
 	return true;
+}
+
+void deinitialize_engine_fileno(void *context) {
+	pthread_mutex_destroy(&scanmutex);
 }
 
 static bool abiggerb(struct timespec a, struct timespec b) {
@@ -103,12 +107,12 @@ static bool list_records_fileno(unsigned *amount,       // Pointer that could be
 		return false;
 	}
 
-	mtx_lock(&scanmutex);
+	pthread_mutex_lock(&scanmutex);
 	glob_from = from;
 	glob_to = to;
 	glob_dirfd = dfd;
 	int ret = scandir(f->addr, &e, filter, comparator);
-	mtx_unlock(&scanmutex);
+	pthread_mutex_unlock(&scanmutex);
 
 	close(dfd);
 	unsigned limit = *amount; // 8 lines below could be refactored... Or now. IDK.

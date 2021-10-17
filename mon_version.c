@@ -3,7 +3,7 @@
 #include "mongoose.h"
 #include "app.c"
 
-static int s_signo;
+static int s_signo = 0;
 static void signal_handler(int signo) {
 	s_signo = signo;
 }
@@ -12,9 +12,9 @@ static void write_fun(const void *addr, unsigned long amount, void *context) {
 	mg_http_write_chunk(context, addr, amount);
 }
 
-static void set_http_status_and_hdr_fun_stub(unsigned short status, const char **headers, void *context) {}
+static void set_http_status_and_hdr_fun_stub(unsigned short status, const char * const *headers, void *context) {}
 
-static void set_http_status_and_hdr_fun(unsigned short status, const char **headers, void *context) {
+static void set_http_status_and_hdr_fun(unsigned short status, const char * const *headers, void *context) {
 	if (status > 999 or status < 100) status = 503;
 	mg_printf(context, "HTTP/1.1 %u\r\nTransfer-Encoding: chunked\r\n", status);
 	if (headers != NULL) {
@@ -43,10 +43,21 @@ static const char *locate_header_fun(const char *hdr, size_t *len, void *context
 
 static void cb(struct mg_connection *c, int ev, void *ev_data, void *fn_data) {
 	if (ev != MG_EV_HTTP_MSG) return;
+	struct mg_http_message *hm = (struct mg_http_message *) ev_data;
+//	if (mg_http_match_uri(hm, "/static/**")) {
+// that ugly shit below is the reason of mg_http_serve_dir() retardness. It's unable to serve dir as itself
+// so, you can only access /static/static with such URI. Facepalm.jpg.
+	static const unsigned staticstrsize = strizeof("/static");
+	if (hm->uri.len > staticstrsize and memcmp(hm->uri.ptr, "/static/", staticstrsize) == 0) {
+		memmove((char *)hm->uri.ptr, hm->uri.ptr +  staticstrsize, hm->uri.len - staticstrsize);
+		hm->uri.len -= staticstrsize;
+		struct mg_http_serve_opts opts = {.root_dir = "static"}; // please help me to restrict access to anything except /static/
+		mg_http_serve_dir(c, ev_data, &opts);
+		return;
+	}
+
 	app_write = write_fun_stub;
 	set_http_status_and_hdr = set_http_status_and_hdr_fun;
-
-	struct mg_http_message *hm = (struct mg_http_message *) ev_data;
 	appargs a = {.context1 = c,
 				 .context2 = hm,
 				 .request = hm->uri.ptr,
@@ -66,8 +77,12 @@ int main() {
 	struct mg_mgr mgr;
 	mg_mgr_init(&mgr);
 	mg_log_set("1");
-	void *appcontext;
-	app_prepare(&appcontext);
+	char contextbuffer[CONTEXTAPPBUFFERSIZE];
+	void *appcontext = &contextbuffer;
+	if (app_prepare(&appcontext) == false) {
+		LOG(LL_ERROR, ("Unable to initialize app"));
+		return EXIT_FAILURE;
+	}
 	if ((mg_http_listen(&mgr, "http://0.0.0.0:8000", cb, appcontext)) == NULL) {
 		LOG(LL_ERROR, ("Cannot listen!"));
 		return EXIT_FAILURE;

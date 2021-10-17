@@ -1,23 +1,35 @@
+// You may use the config below for this fastcgi application
+//
+// server {
+//     listen 8080;
+//     location / {
+//         include /etc/nginx/fastcgi_params;
+//         fastcgi_pass unix:/tmp/cblog.sock;
+//     }
+//     location /static/ {
+//         autoindex off;
+//         disable_symlinks on;
+//         root CHANGEME/cblog/;
+//     }
+// }
+
 #define _BSD_SOURCE
 #define _DEFAULT_SOURCE
 
 #include <stdlib.h>
-#include <threads.h>
-#include <sys/stat.h>
 #include <signal.h>
+#include <pthread.h>
+#include <sys/stat.h>
 #include <fcgiapp.h>
 #include <limits.h>
 
-#define DATA_LAYER_FILENO
-#define DATA_LAYER_MYSQL
-#include "abstract_data_layer.c"
-
 #include "app.c"
 
-const char * const sockpath = "/tmp/eclock.sock";
+const char * const sockpath = "/tmp/cblog.sock";
 
-static int s_signo;
+static int s_signo = 0;
 static void signal_handler(int signo) {
+	FCGX_ShutdownPending();
 	s_signo = signo;
 }
 
@@ -27,9 +39,9 @@ static void write_fun(const void *addr, unsigned long amount, void *context) {
 	FCGX_PutStr(addr, (int) amount, request->out);
 }
 
-static void set_http_status_and_hdr_fun_stub(unsigned short status, const char **headers, void *context) {}
+static void set_http_status_and_hdr_fun_stub(unsigned short status, const char * const *headers, void *context) {}
 
-static void set_http_status_and_hdr_fun(unsigned short status, const char **headers, void *context) {
+static void set_http_status_and_hdr_fun(unsigned short status, const char * const *headers, void *context) {
 	FCGX_Request *request = context;
 	if (status > 999 or status < 100) status = 503;
 	FCGX_FPrintF(request->out, "Status: %u\r\n", status);
@@ -49,7 +61,6 @@ static void write_fun_stub(const void *addr, unsigned long amount, void *context
 	set_http_status_and_hdr_fun(200, NULL, context);
 	write_fun(addr, amount, context);
 }
-
 
 #ifndef NO_NGINX_KLUDGE
 const char * const nginx_headers_table[] = {
@@ -75,7 +86,7 @@ const char * const nginx_headers_table[] = {
 //    header. For example, in /etc/nginx/fastcgi_params you can change CONTENT_TYPE
 //    to Content-Type
 // 2. Make a patch in nginx to allow pass headers as is, LOL
-// 3. Make a kludge in this software, like, correspondence table, that silently changes
+// 3. Make a kludge in this software, like, correspondence headers_table, that silently changes
 //    string from User-Agent to HTTP_USER_AGENT just because of nginx
 // 4. Ask a application developer to support both (no, I definitely don't like it)
 
@@ -101,18 +112,13 @@ static const char *locate_header_fun(const char *hdr, size_t *len, void *context
 }
 
 int fd;
-int worker(void *arg) {
+void *worker(void *arg) {
 	FCGX_Init();
 	FCGX_Request request;
 	FCGX_InitRequest(&request, fd, 0);
 
 	while (1) {
-		if (FCGX_Accept_r(&request) == -1) {
-			puts("AAAAAAA!");
-			sleep(1);
-			continue;
-		}
-
+		if (FCGX_Accept_r(&request) == -1) break;
 		app_write = write_fun_stub;
 		set_http_status_and_hdr = set_http_status_and_hdr_fun;
 		const char *req = FCGX_GetParam("REQUEST_URI", request.envp);
@@ -125,36 +131,35 @@ int worker(void *arg) {
 					 .method = http_determine_method(method, strlen(method))
 		};
 		app_request(a);
-//
-//		FCGX_PutStr("Content-type: text/plain\r\n\r\n", 28, request.out);
-//		FCGX_PutStr("Hey!\n", 5, request.out);
-//
-//		FCGX_Finish_r(&request);
+		FCGX_Finish_r(&request);
 		if (s_signo) break;
 	}
-
-	return 0;
+	return NULL;
 }
 
 int main() {
 	fd = FCGX_OpenSocket(sockpath, 128);
 	if (fd < 0) return EXIT_FAILURE;
 	chmod(sockpath, 0777);
-//	signal(SIGINT, signal_handler);
-//	signal(SIGTERM, signal_handler);
+	signal(SIGINT, signal_handler);  // threads WILL NOT exit unless they finish request,
+	signal(SIGTERM, signal_handler); // even if it's still received. Thats a todo.
 	locate_header = locate_header_fun;
 
-	void *appcontext;
-	app_prepare(&appcontext);
+	char contextbuffer[CONTEXTAPPBUFFERSIZE];
+	void *appcontext = &contextbuffer;
+	if (app_prepare(&appcontext) == false) {
+		printf("Unable to initialize app");
+		return EXIT_FAILURE;
+	}
 
 	const unsigned n_threads = 4;
-	thrd_t threads[n_threads];
+	pthread_t threads[n_threads];
 	for (unsigned i = 0; i < n_threads; i++ ) {
-		thrd_create(&threads[i], worker, appcontext);
+		pthread_create(&threads[i], NULL, worker, appcontext);
 	}
 
 	for (unsigned i = 0; i < n_threads; i++ ) {
-		thrd_join(threads[i], NULL);
+		pthread_join(threads[i], NULL);
 	}
 	app_finish(appcontext);
 	unlink(sockpath);
