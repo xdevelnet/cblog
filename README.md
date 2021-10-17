@@ -27,3 +27,30 @@ Pros are marked with green color, cons - red. Points that can't be categorized b
 3. There would be bundled templates with my app, which servers enough compatibility, but not using much client's resources. In other words, it would be lighweight html without javascript, or just very small amount of javascript wich is not required to site to run website.
 4. I just want to cull/take away web-monkeys that are making a mess/hell/sodomy in modern web by high entry threshold into C programming language and related technologies. No offence dear colleagues, but business pushes on market, and demand on crap creates supply.
 5. I have a mental trauma after php (while I was freelancing at the dawn of a career), which I attempted to cure with perl (during work on PortaOne Inc.), then I finished myself by using Python (during making some help to friends with their projects). These programming languages themselves aren't bad, I am not their hater... Issues that they made and the ways that are solved are just so ugly and causes my rejection. After billions of useleless frameworks I just spat and left into Embedded.
+
+## Build the app
+
+First of all you need to download dependencies.
+
+```bash
+git clone http://github.com/xdevelnet/ssb.git
+```
+If you want to make project run via fastcgi, you would need nginx and fastcgi:
+```bash
+sudo apt-get install libfcgi-dev nginx
+```
+If you want to make project run via embedded web server mongoose:
+```bash
+git clone https://github.com/cesanta/mongoose.git
+```
+
+Now download project itself and build it. Replace `obj` with `fcgi` or `mon`
+```bash
+git clone http://github.com/xdevelnet/cblog
+cd cblog
+make obj
+```
+
+Done! Now you can run your app via freshly created binary.
+
+Use external tools/software to controll process.
