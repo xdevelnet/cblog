@@ -14,11 +14,11 @@
 
 Pros are marked with green color, cons - red. Points that can't be categorized by pros/cons are marked with blue.
 
-1. Resources. 💚 Using small amount of resources, especially on some configurations
-2. Compatibility. 💚 Much better compatibility with all possible devices - because of small resource usage it can be embedded into anything
-3. Development speed. ❤️ Very slow. Developing such apps gives no right to make a mistake, therefore developer should be deal carefully with that. Wherein, additional techniques to prove reliability and faultlessness/correctness are mandatory.
-4. Reliability. 💙 In theory, even during complicated OS states, such software will continue to function, because in most cases running process already prepared all data and did all preparation operations. So, after serving each request, such data will be not freed, and continue to exist in order to serve further requests. Hardly speaking, if OS is capable to evaluate standard Berkely sockets operations (socket()/send()/recv()/poll()/close()), the application will probably continue to work.
-5. Security. 💙 Despite the fact that compiled software is well known for dangerous vulnerabilities because of developers mistakes, vulnerabilities on websites that are made by using modern tools/ways aren't much better. The whole tragedy is that because of complexity and bloatwareness that's between "received request" and "send a response", such flaws are still exists and found every year, just look at php and Wordpress.
+1. Resources. 🟩 Using small amount of resources, especially on some configurations
+2. Compatibility. 🟩 Much better compatibility with all possible devices - because of small resource usage it can be embedded into anything
+3. Development speed. 🟥️ Very slow. Developing such apps gives no right to make a mistake, therefore developer should be deal carefully with that. Wherein, additional techniques to prove reliability and faultlessness/correctness are mandatory.
+4. Reliability. 🟦 In theory, even during complicated OS states, such software will continue to function, because in most cases running process already prepared all data and did all preparation operations. So, after serving each request, such data will be not freed, and continue to exist in order to serve further requests. Hardly speaking, if OS is capable to evaluate standard Berkely sockets operations (socket()/send()/recv()/poll()/close()), the application will probably continue to work.
+5. Security. 🟦 Despite the fact that compiled software is well known for dangerous vulnerabilities because of developers mistakes, vulnerabilities on websites that are made by using modern tools/ways aren't much better. The whole tragedy is that because of complexity and bloatwareness that's between "received request" and "send a response", such flaws are still exists and found every year, just look at php and Wordpress.
 
 **I also have something to say!**
 
