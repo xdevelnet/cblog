@@ -70,7 +70,7 @@ Application features:
 |Tags support|Planned|Tags design are already present in my templates|
 |CI<br />Pre-built packages,<br />Docker images|Planned|CI done only for subprojects (ssb)|
 |Tests|Partially done|Done only for one module|
-|Pages|WIP|Only 404 page with proper template is done|
+|Pages|Partially done|Title page with displaying multiple blog records, single record page, 404 page|
 
 Supported data storage:
 
