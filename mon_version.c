@@ -9,6 +9,7 @@ static void signal_handler(int signo) {
 }
 
 static void write_fun(const void *addr, unsigned long amount, void *context) {
+	if (amount == 0) return;
 	mg_http_write_chunk(context, addr, amount);
 }
 
@@ -78,7 +79,7 @@ int main() {
 	mg_mgr_init(&mgr);
 	mg_log_set("1");
 	char contextbuffer[CONTEXTAPPBUFFERSIZE];
-	void *appcontext = &contextbuffer;
+	void *appcontext = contextbuffer;
 	if (app_prepare(&appcontext) == false) {
 		LOG(LL_ERROR, ("Unable to initialize app"));
 		return EXIT_FAILURE;
