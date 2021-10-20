@@ -9,7 +9,7 @@
 #include "../abstract_data_layer.c"
 
 int main() {
-	struct context con;
+	struct layer_context con;
 	const char *error;
 	if (initialize_engine(ENGINE_FILENO, "fileno_testset", &con, &error) == false) {
 		printf("Failed to initialize engine!\n");
@@ -33,7 +33,7 @@ int main() {
 		if (get_record(&b, list[i], &con, &error) == false) {
 			printf("get_record() failed! Reason: %s", error);
 		} else {
-			printf("Record name: %s\nRecord data: %s\n", b.recordname, b.recordcontent);
+			printf("len: %u Record name: %s\nlen: %u Record data: %s\n", b.recordnamelen, b.recordname, b.recordcontentlen, b.recordcontent);
 		}
 	}
 

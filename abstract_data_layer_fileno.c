@@ -82,7 +82,7 @@ static int filter(const struct dirent *d) {
 	static const int keep = 1;
 	static const int away = 0;
 
-	if (d->d_type != DT_LNK) return away;
+	if (d->d_type != DT_LNK) return away; // I wanted to detect hardlinks because they are much more flexible for end user. Sigh.
 	if (is_str_unsignedint(d->d_name) == false) return away;
 	struct stat s;
 	fstatat(glob_dirfd, d->d_name, &s, 0);
@@ -91,8 +91,8 @@ static int filter(const struct dirent *d) {
 	return keep;
 }
 
-// SELECT * from records WHERE modified_time > from and modified_time < to LIMIT amount OFFSET offset
-static bool list_records_fileno(unsigned *amount,       // Pointer that could be used for limiting amount of results in list. After executing places amount of results.
+// SELECT * from records WHERE modified_time > from and modified_time < to LIMIT amount OFFSET offset sort by modified_time;
+bool list_records_fileno(unsigned *amount,// Pointer that could be used for limiting amount of results in list. After executing places amount of results.
                      unsigned long *result_list, // Array that will be filled with results
                      unsigned offset,            // Skip some amount rows/records/results
                      ttime_t from,               // Select only records that were created from specified unixtime
@@ -170,6 +170,7 @@ static bool get_record_fileno(struct blog_record *r, unsigned choosen_record, vo
 		close(fd);
 		if (error) *error = data_layer_error_not_enough_stack_space;
 		r->stack_space = calc;
+		return false;
 	}
 
 	char *map = mmap(NULL, s.st_size, PROT_READ, MAP_SHARED, fd, 0);
@@ -182,8 +183,10 @@ static bool get_record_fileno(struct blog_record *r, unsigned choosen_record, vo
 
 	char *fly = r->stack;
 	r->recordname = memcpy(fly, name, strlen(name) + sizeof(char));
+	r->recordnamelen = strlen(name);
 	fly += strlen(name) + sizeof(char);
 	r->recordcontent = memcpy(fly, map, s.st_size);
+	r->recordcontentlen = s.st_size;
 	fly += s.st_size;
 	*fly = '\0';
 	munmap(map, s.st_size);

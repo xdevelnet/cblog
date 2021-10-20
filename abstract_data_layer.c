@@ -20,7 +20,7 @@ struct blog_record {
 	ttime_t unixepoch;   // seconds since unix epoch.
 };
 
-struct context {
+struct layer_context {
 	uint32_t a;
 	uint32_t b;
 	uint32_t c;
