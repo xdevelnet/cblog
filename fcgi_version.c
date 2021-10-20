@@ -22,6 +22,7 @@
 #include <sys/stat.h>
 #include <fcgiapp.h>
 #include <limits.h>
+#include <fcgios.h>
 
 #include "app.c"
 
@@ -34,6 +35,7 @@ static void signal_handler(int signo) {
 }
 
 static void write_fun(const void *addr, unsigned long amount, void *context) {
+	if (amount == 0) return;
 	FCGX_Request *request = context;
 	if (amount > INT_MAX) amount = INT_MAX;
 	FCGX_PutStr(addr, (int) amount, request->out);
@@ -113,7 +115,6 @@ static const char *locate_header_fun(const char *hdr, size_t *len, void *context
 
 int fd;
 void *worker(void *arg) {
-	FCGX_Init();
 	FCGX_Request request;
 	FCGX_InitRequest(&request, fd, 0);
 
@@ -139,6 +140,7 @@ void *worker(void *arg) {
 
 int main() {
 	fd = FCGX_OpenSocket(sockpath, 128);
+	FCGX_Init();
 	if (fd < 0) return EXIT_FAILURE;
 	chmod(sockpath, 0777);
 	signal(SIGINT, signal_handler);  // threads WILL NOT exit unless they finish request,
@@ -163,6 +165,7 @@ int main() {
 	}
 	app_finish(appcontext);
 	unlink(sockpath);
+	OS_LibShutdown(); // IMO function should be exported.
 
 	return EXIT_SUCCESS;
 }
