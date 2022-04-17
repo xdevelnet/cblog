@@ -59,8 +59,8 @@ static void cb(struct mg_connection *c, int ev, void *ev_data, void *fn_data) {
 
 	app_write = write_fun_stub;
 	set_http_status_and_hdr = set_http_status_and_hdr_fun;
-	appargs a = {.context1 = c,
-				 .context2 = hm,
+	reqargs a = {.servercontext1 = c,
+				 .servercontext2 = hm,
 				 .request = hm->uri.ptr,
 				 .request_len = hm->uri.len,
 				 .appcontext = fn_data,
@@ -74,6 +74,18 @@ int main() {
 	signal(SIGINT, signal_handler);
 	signal(SIGTERM, signal_handler);
 	locate_header = locate_header_fun;
+
+	// here you can add cli parsing or even config file reading
+	config.appname = default_appname;
+	config.appnamelen = default_appnamelen;
+	config.template_type = default_template_type;
+	config.temlate_name = default_template_name;
+	config.datalayer_type = default_datalayer_type;
+	config.datalayer_addr = default_datalayer_addr;
+	config.title_page_name = default_title_page_name;
+	config.title_page_name_len = default_title_page_len;
+	config.title_page_content = default_title_content;
+	config.title_page_content_len = default_title_content_len;
 
 	struct mg_mgr mgr;
 	mg_mgr_init(&mgr);

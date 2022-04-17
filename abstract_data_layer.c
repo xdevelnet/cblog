@@ -17,6 +17,7 @@ struct blog_record {
 	const char *recordname;
 	unsigned recordcontentlen;
 	const char *recordcontent;
+	unsigned choosen_record; // decimal that represents record in database
 	ttime_t unixepoch;   // seconds since unix epoch.
 };
 
@@ -64,7 +65,7 @@ enum datalayer_engines {
 #endif
 };
 
-bool initialize_engine(enum datalayer_engines e, void *addr, void *context, const char **error) {
+bool initialize_engine(enum datalayer_engines e, const void *addr, void *context, const char **error) {
 	switch (e) {
 #ifdef DATA_LAYER_MYSQL
 	case ENGINE_MYSQL:

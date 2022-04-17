@@ -1,6 +1,8 @@
 #ifndef CBLOG_DEFAULT_RODATA_H
 #define CBLOG_DEFAULT_RODATA_H
 
+#define HOW_MANY_RECORDS_U_WANT_TO_SEE_ON_TITLEPAGE 5
+
 const char default_appname[] = "Blog demo";
 size_t default_appnamelen = strizeof(default_appname);
 source_type default_template_type = SOURCE_FILE;

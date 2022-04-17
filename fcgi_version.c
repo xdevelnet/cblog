@@ -77,8 +77,6 @@ const char * const nginx_headers_table[] = {
 	"Upgrade-Insecure-Requests", "HTTP_UPGRADE_INSECURE_REQUESTS",
 	NULL, NULL
 };
-#endif // NO_NGINX_KLUDGE
-
 // Unfortunately, NGINX can't pass all http headers, only predefined.
 // Also, even if you are going to use them, defaults aren't looks the same
 // as headers. For example, you may look for a "User-Agent", but under nginx that
@@ -91,11 +89,7 @@ const char * const nginx_headers_table[] = {
 // 3. Make a kludge in this software, like, correspondence headers_table, that silently changes
 //    string from User-Agent to HTTP_USER_AGENT just because of nginx
 // 4. Ask a application developer to support both (no, I definitely don't like it)
-
 static const char *locate_header_fun(const char *hdr, size_t *len, void *context) {
-	FCGX_Request *r = context;
-
-#ifndef NO_NGINX_KLUDGE
 	const char *looking_for = NULL;
 	for (unsigned i = 0; nginx_headers_table[i] != NULL; i+=2) {
 		if (strcmp(nginx_headers_table[i], hdr) == 0) {
@@ -105,8 +99,10 @@ static const char *locate_header_fun(const char *hdr, size_t *len, void *context
 	}
 	if (looking_for == NULL) return NULL;
 	hdr = looking_for;
+#else
+static const char *locate_header_fun(const char *hdr, size_t *len, void *context) {
 #endif // NO_NGINX_KLUDGE
-
+	FCGX_Request *r = context;
 	char *result = FCGX_GetParam(hdr, r->envp);
 	if (result == NULL) return NULL;
 	*len = strlen(result);
@@ -117,6 +113,8 @@ int fd;
 void *worker(void *arg) {
 	FCGX_Request request;
 	FCGX_InitRequest(&request, fd, 0);
+	char workerbuffer[CONTEXTAPPBUFFERSIZE];
+	memcpy(workerbuffer, arg, sizeof(struct appcontext));
 
 	while (1) {
 		if (FCGX_Accept_r(&request) == -1) break;
@@ -124,11 +122,11 @@ void *worker(void *arg) {
 		set_http_status_and_hdr = set_http_status_and_hdr_fun;
 		const char *req = FCGX_GetParam("REQUEST_URI", request.envp);
 		const char *method = FCGX_GetParam("REQUEST_METHOD", request.envp);
-		appargs a = {.context1 = &request,
-					 .context2 = &request,
+		reqargs a = {.servercontext1 = &request,
+					 .servercontext2 = &request,
 					 .request = req,
 					 .request_len = strlen(req),
-					 .appcontext = arg,
+					 .appcontext = workerbuffer,
 					 .method = http_determine_method(method, strlen(method))
 		};
 		app_request(a);
@@ -147,8 +145,20 @@ int main() {
 	signal(SIGTERM, signal_handler); // even if it's still received. Thats a todo.
 	locate_header = locate_header_fun;
 
-	char contextbuffer[CONTEXTAPPBUFFERSIZE];
-	void *appcontext = &contextbuffer;
+	// here you can add cli parsing or even config file reading
+	config.appname = default_appname;
+	config.appnamelen = default_appnamelen;
+	config.template_type = default_template_type;
+	config.temlate_name = default_template_name;
+	config.datalayer_type = default_datalayer_type;
+	config.datalayer_addr = default_datalayer_addr;
+	config.title_page_name = default_title_page_name;
+	config.title_page_name_len = default_title_page_len;
+	config.title_page_content = default_title_content;
+	config.title_page_content_len = default_title_content_len;
+
+	char contextbuffer[sizeof(struct appcontext)];
+	void *appcontext = contextbuffer;
 	if (app_prepare(&appcontext) == false) {
 		printf("Unable to initialize app");
 		return EXIT_FAILURE;

@@ -91,14 +91,14 @@ static int filter(const struct dirent *d) {
 	return keep;
 }
 
-// SELECT * from records WHERE modified_time > from and modified_time < to LIMIT amount OFFSET offset sort by modified_time;
+// SELECT record_id from records WHERE modified_time > from and modified_time < to LIMIT amount OFFSET offset sort by modified_time;
 bool list_records_fileno(unsigned *amount,// Pointer that could be used for limiting amount of results in list. After executing places amount of results.
-                     unsigned long *result_list, // Array that will be filled with results
-                     unsigned offset,            // Skip some amount rows/records/results
-                     ttime_t from,               // Select only records that were created from specified unixtime
-                     ttime_t to,                 // Same as above, but until specified unixtime
-                     void *context,
-                     const char **error) {
+						unsigned long *result_list, // Array that will be filled with results
+						unsigned offset,            // Skip some amount rows/records/results
+						ttime_t from,               // Select only records that were created from specified unixtime
+						ttime_t to,                 // Same as above, but until specified unixtime
+						void *context,
+						const char **error) {
 	struct fileno_context *f = context;
 	struct dirent **e;
 	int dfd = open(f->addr, O_DIRECTORY | O_RDONLY);
@@ -190,6 +190,8 @@ static bool get_record_fileno(struct blog_record *r, unsigned choosen_record, vo
 	fly += s.st_size;
 	*fly = '\0';
 	munmap(map, s.st_size);
+	r->choosen_record = choosen_record;
+	r->unixepoch.t = s.st_mtim.tv_sec;
 
 	return true;
 }

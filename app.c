@@ -6,12 +6,14 @@
 #define STRINGIZE(a) #a
 #endif
 
-#include <stdio.h>
+#include "util.c"
 
 #define DATA_LAYER_FILENO
 #define DATA_LAYER_MYSQL
 #include "abstract_data_layer.c"
 #include "libessb.c"
+
+#include "default_rodata.h"
 
 typedef enum {POST, GET, PUT, PATCH, DELETE, UNKNOWN} http_methods;
 
@@ -35,14 +37,33 @@ http_methods http_determine_method(const char *ptr, size_t len) {
 	}
 }
 
-typedef struct appargs {
+struct appconfig {
+	const char *appname;
+	size_t appnamelen;
+	enum datalayer_engines datalayer_type;
+	const void *datalayer_addr;
+	source_type template_type;
+	const char *temlate_name;
+	const char *title_page_name;
+	size_t title_page_name_len;
+	const char *title_page_content;
+	size_t title_page_content_len;
+} config;
+
+struct appcontext {
+	essb templates;
+	struct layer_context layer;
+	char freebuffer[];
+};
+
+typedef struct reqargs {
 	const char *request;
 	size_t request_len;
 	http_methods method;
-	void *appcontext;
-	void *context1;
-	void *context2;
-} appargs;
+	void *appcontext; // struct appcontext
+	void *servercontext1;
+	void *servercontext2;
+} reqargs;
 
 const char *(*locate_header)(const char *, size_t *, void *);
 void (*set_http_status_and_hdr) (unsigned short, const char * const *, void *);
@@ -52,30 +73,31 @@ void (*app_write) (const void *, unsigned long, void *);
 #define REQUEST_LEN a.request_len
 #define METHOD a.method
 #define CONTEXT a.appcontext
-#define LOCATE_HEADER(arg1, arg2) locate_header(arg1, arg2, a.context2)
-#define SET_HTTP_STATUS_AND_HDR(arg1, arg2) set_http_status_and_hdr(arg1, arg2, a.context1)
-#define APP_WRITE(arg1, arg2) app_write(arg1, arg2, a.context1)
+#define LOCATE_HEADER(arg1, arg2) locate_header(arg1, arg2, a.servercontext2)
+#define SET_HTTP_STATUS_AND_HDR(arg1, arg2) set_http_status_and_hdr(arg1, arg2, a.servercontext1)
+#define APP_WRITE(arg1, arg2) app_write(arg1, arg2, a.servercontext1)
+
+#define APP_WRITECS(a) APP_WRITE(a, strizeof(a))
 
 const char *headers_table[] = {"Content-Type: text/html;charset=utf-8", "Server: OLOLOLO TROLOLO", NULL};
 
-#define CONTEXTAPPBUFFERSIZE 4096
-
-struct appcontext {
-	essb templates;
-	struct layer_context layer;
-	char freebuffer[];
-};
+#define CONTEXTAPPBUFFERSIZE 262144
 
 // expected pages
-#define TITLE_PAGE_PART 1
+
+enum pages {
+	TITLE_PAGE_PART     = 1,
+	FOOTER_PAGE_PART    = 2,
+	CONTENT_PAGE_PART   = 3,
+	REPEATONE_PAGE_PART = 4,
+	REPEATTWO_PAGE_PART = 5,
+	PAGES_MAX
+};
+
 #define TITILE_PAGE_NAME "title"
-#define FOOTER_PAGE_PART 2
 #define FOOTER_PAGE_NAME "footer"
-#define CONTENT_PAGE_PART 3
 #define CONTENT_PAGE_NAME "content"
-#define REPEATONE_PAGE_PART 4
 #define REPEATONE_PAGE_NAME "repeat_1"
-#define REPEATTWO_PAGE_PART 5
 #define REPEATTWO_PAGE_NAME "repeat_2"
 
 static inline int32_t template_tag_to_number(const char *name, int32_t length) {
@@ -103,14 +125,14 @@ bool app_prepare(void **ptr) {
 	essb *e = &con->templates;
 	struct layer_context *l = &con->layer;
 	memset(e, '\0', sizeof(essb));
-	parse_essb(e, SOURCE_FILE, "static/minimalist/index (copy).ssb", NULL);
+	parse_essb(e, config.template_type, config.temlate_name, NULL);
 	if (e->errreasonstr != NULL) {
 		snprintf(*ptr, CONTEXTAPPBUFFERSIZE, "Error during parsing essb: %s", e->errreasonstr);
 		return false;
 	}
 
 	const char *error;
-	if (initialize_engine(ENGINE_FILENO, "demo_data", l, &error) == false) {
+	if (initialize_engine(config.datalayer_type, config.datalayer_addr, l, &error) == false) {
 		snprintf(*ptr, CONTEXTAPPBUFFERSIZE, "Error during initializing_engine: %s", error);
 		return false;
 	}
@@ -151,25 +173,19 @@ uint32_t get_u32_from_end_of_string(const char *string, size_t len) {
 	return strtoul(buffer, NULL, 10);
 }
 
-static void notfound(appargs a) {
+static void notfound(reqargs a) {
 	SET_HTTP_STATUS_AND_HDR(404, headers_table);
 
-	const char *out[] = {
+	const char *out[PAGES_MAX] = {
 		[TITLE_PAGE_PART]    = "404 NOT FOUND",
-		[FOOTER_PAGE_PART]   = "",
 		[CONTENT_PAGE_PART]  = "Sorry but we can't find content that you are looking for :(",
-		[REPEATONE_PAGE_PART]= "",
-		[REPEATTWO_PAGE_PART]= ""
 	};
-	size_t outsizes[] = {
+	size_t outsizes[PAGES_MAX] = {
 		[TITLE_PAGE_PART]    = strizeof("404 NOT FOUND"),
-		[FOOTER_PAGE_PART]   = strizeof(""),
 		[CONTENT_PAGE_PART]  = strizeof("Sorry but we can't find content that you are looking for :("),
-		[REPEATONE_PAGE_PART]= strizeof(""),
-		[REPEATTWO_PAGE_PART]= strizeof("")
 	};
 
-	struct appcontext *con = a.appcontext;
+	struct appcontext *con = CONTEXT;
 	essb *e = &con->templates;
 	for (unsigned i = 0; i < e->records_amount; i++) {
 		if (e->record_size[i] < 0) APP_WRITE(out[-e->record_size[i]], outsizes[-e->record_size[i]]);
@@ -182,34 +198,56 @@ static void rewind_back(essb *e, long looking_for, unsigned *position) {
 	--*position;
 }
 
-const char title_rodata_title[] = "Welcome to my blog!";
-const char title_rodata_content[] = "<h2>Welcome to my personal blog!<h2><br>"
-								  "Here you may find some notes and records that I am write from time to time.<br>"
-								  "Recent posts:";
+void title_show_tag_processing(reqargs a, int32_t tag, unsigned *i, unsigned ii, struct blog_record *b) {
+	tag = -tag;
 
-static void title(appargs a) {
-	struct appcontext *con = a.appcontext;
+	const char *title_page_name = config.title_page_name;
+	size_t title_page_name_len = config.title_page_name_len;
+	const char *title_page_content = config.title_page_content;
+	size_t title_page_content_len = config.title_page_content_len;
+
+	switch (tag) {
+		case TITLE_PAGE_PART:
+			if (ii == 0) {APP_WRITE(title_page_name, title_page_name_len); break;}
+			APP_WRITECS("<a href=\"/");
+			APP_WRITE(b->recordname, b->recordnamelen);
+			APP_WRITECS("-");
+			char buffer[10];
+			APP_WRITE(buffer, snprintf(buffer, sizeof(buffer), "%u", b->choosen_record));
+			APP_WRITECS("\">");
+			APP_WRITE(b->recordname, b->recordnamelen);
+			APP_WRITECS("</a>");
+			break;
+		case CONTENT_PAGE_PART:
+			if (ii == 0) {APP_WRITE(title_page_content, title_page_content_len); break;}
+
+			break;
+		default:
+			return;
+	}
+}
+
+static void title(reqargs a) {
+	struct appcontext *con = CONTEXT;
 	essb *e = &con->templates;
 	struct layer_context *l = &con->layer;
 
-	unsigned amount = 5;
-	unsigned long found[5];
+	unsigned amount = HOW_MANY_RECORDS_U_WANT_TO_SEE_ON_TITLEPAGE;
+	unsigned long found[HOW_MANY_RECORDS_U_WANT_TO_SEE_ON_TITLEPAGE];
 	if (list_records(&amount, found, 0, (ttime_t) 0l, (ttime_t) 2147483647l, l, NULL) == false) return notfound(a);
 
-	const char *out[] = {
-		[TITLE_PAGE_PART]    = title_rodata_title,
-		[FOOTER_PAGE_PART]   = "",
-		[CONTENT_PAGE_PART]  = title_rodata_content,
-		[REPEATONE_PAGE_PART]= "",
-		[REPEATTWO_PAGE_PART]= ""
+	const char *out[PAGES_MAX] = {
+		[TITLE_PAGE_PART]    = config.title_page_name,
+		[CONTENT_PAGE_PART]  = config.title_page_content,
 	};
-	size_t outsizes[] = {
-		[TITLE_PAGE_PART]    = strizeof(title_rodata_title),
-		[FOOTER_PAGE_PART]   = strizeof(""),
-		[CONTENT_PAGE_PART]  = strizeof(title_rodata_content),
-		[REPEATONE_PAGE_PART]= strizeof(""),
-		[REPEATTWO_PAGE_PART]= strizeof("")
+	size_t outsizes[PAGES_MAX] = {
+		[TITLE_PAGE_PART]    = config.title_page_name_len,
+		[CONTENT_PAGE_PART]  = config.title_page_content_len,
 	};
+
+//	void (*special[PAGES_MAX])(reqargs) = {
+//		[TITLE_PAGE_PART] = NULL
+//	};
 
 	unsigned ii = 0;
 	for (unsigned i = 0; i < e->records_amount; i++) {
@@ -228,6 +266,8 @@ static void title(appargs a) {
 			};
 
 			if (get_record(&b, found[ii], l, NULL) == true) {
+				char *f = util_memmem(b.recordcontent, b.recordcontentlen, "<!-- break -->", strizeof("<!-- break -->"));
+				if (f) b.recordcontentlen -= b.recordcontentlen - (f - b.recordcontent);
 				out[TITLE_PAGE_PART] = b.recordname;
 				out[CONTENT_PAGE_PART] = b.recordcontent;
 				outsizes[TITLE_PAGE_PART] = b.recordnamelen;
@@ -238,10 +278,27 @@ static void title(appargs a) {
 	}
 }
 
-static void show_record(appargs a, uint32_t record) {
+static inline void record_show_tag_processing(reqargs a, int32_t tag, struct blog_record b) {
+	tag = -tag;
+
+	switch (tag) {
+		case TITLE_PAGE_PART:
+			APP_WRITE(config.appname, config.appnamelen);
+			APP_WRITE(" - ", 3);
+			APP_WRITE(b.recordname, b.recordnamelen);
+			break;
+		case CONTENT_PAGE_PART:
+			APP_WRITE(b.recordcontent, b.recordcontentlen);
+			break;
+		default:
+			return;
+	}
+}
+
+static void show_record(reqargs a, uint32_t record) {
 	if (record == UINT32_MAX) return notfound(a);
 
-	struct appcontext *con = a.appcontext;
+	struct appcontext *con = CONTEXT;
 	essb *e = &con->templates;
 	struct layer_context *l = &con->layer;
 
@@ -252,29 +309,14 @@ static void show_record(appargs a, uint32_t record) {
 	if (get_record(&b, record, l, NULL) == false) {
 		return notfound(a);
 	}
-	const char *out[] = {
-		[TITLE_PAGE_PART]    = b.recordname,
-		[FOOTER_PAGE_PART]   = "",
-		[CONTENT_PAGE_PART]  = b.recordcontent,
-		[REPEATONE_PAGE_PART]= "",
-		[REPEATTWO_PAGE_PART]= ""
-	};
-	size_t outsizes[] = {
-		[TITLE_PAGE_PART]    = b.recordnamelen,
-		[FOOTER_PAGE_PART]   = strizeof(""),
-		[CONTENT_PAGE_PART]  = b.recordcontentlen,
-		[REPEATONE_PAGE_PART]= strizeof(""),
-		[REPEATTWO_PAGE_PART]= strizeof("")
-	};
 
 	for (unsigned i = 0; i < e->records_amount; i++) {
-		printf("i: %u ; record_size[i]: %d ;\n", i, e->record_size[i]);
-		if (e->record_size[i] < 0) APP_WRITE(out[-e->record_size[i]], outsizes[-e->record_size[i]]);
+		if (e->record_size[i] < 0) record_show_tag_processing(a, e->record_size[i], b);
 		else APP_WRITE(&e->records[e->record_seek[i]], e->record_size[i]);
 	}
 }
 
-void app_request(appargs a) {
+void app_request(reqargs a) {
 	if (METHOD != GET or REQUEST_LEN == 0 or REQUEST[0] != '/') return notfound(a);
 	if (REQUEST_LEN == 1 and REQUEST[0] == '/') return title(a);
 	return show_record(a, get_u32_from_end_of_string(REQUEST, REQUEST_LEN));
