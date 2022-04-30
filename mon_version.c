@@ -93,11 +93,11 @@ int main() {
 	char contextbuffer[CONTEXTAPPBUFFERSIZE];
 	void *appcontext = contextbuffer;
 	if (app_prepare(&appcontext) == false) {
-		LOG(LL_ERROR, ("Unable to initialize app"));
+		MG_ERROR(("Unable to initialize app"));
 		return EXIT_FAILURE;
 	}
 	if ((mg_http_listen(&mgr, "http://0.0.0.0:8000", cb, appcontext)) == NULL) {
-		LOG(LL_ERROR, ("Cannot listen!"));
+		MG_ERROR(("Cannot listen!"));
 		return EXIT_FAILURE;
 	}
 
