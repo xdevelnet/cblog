@@ -11,3 +11,8 @@ bool get_record_mysql(struct blog_record *r, unsigned choosen_record, void *cont
 	*error = data_layer_error_havent_implemented;
 	return false;
 }
+
+bool insert_record_mysql(struct blog_record *r, void *context, const char **error) {
+	*error = data_layer_error_havent_implemented;
+	return false;
+}

@@ -34,6 +34,8 @@ const char data_layer_error_init[] = "Data layer haven't been initialized";
 const char data_layer_error_havent_implemented[] = "Selected data layer engine still not implemented";
 const char data_layer_error_wrong_engine[] = "Wrong engine selected";
 const char data_layer_error_not_enough_stack_space[] = "Not enough stack space in choosen region";
+const char data_layer_error_metadata_corrupted[] = "Metadata corrupted. Storage engine can't be used.";
+const char data_layer_error_invalid_argument[] = "Invalid argument.";
 
 bool list_records_dummy(unsigned *amount, unsigned long *result_list, unsigned offset, ttime_t from, ttime_t to, void *context, const char **error) {
 	*error = data_layer_error_init;
@@ -45,8 +47,14 @@ bool get_record_dummy(struct blog_record *r, unsigned choosen_record, void *cont
 	return false;
 }
 
+bool insert_record_dummy(struct blog_record *r, void *context, const char **error) {
+	*error = data_layer_error_init;
+	return false;
+}
+
 bool (*list_records)(unsigned *, unsigned long *, unsigned, ttime_t, ttime_t, void *, const char **) = list_records_dummy;
 bool (*get_record)(struct blog_record *, unsigned , void *, const char **) = get_record_dummy;
+bool (*insert_record)(struct blog_record *, void *, const char **) = insert_record_dummy;
 
 #ifdef DATA_LAYER_MYSQL
 #include "abstract_data_layer_mysql.c"
@@ -71,12 +79,14 @@ bool initialize_engine(enum datalayer_engines e, const void *addr, void *context
 	case ENGINE_MYSQL:
 		list_records = list_records_mysql;
 		get_record = get_record_mysql;
+		insert_record = insert_record_mysql;
 		return initialize_mysql_context(addr, context, error);
 #endif
 #ifdef DATA_LAYER_FILENO
 	case ENGINE_FILENO:
 		list_records = list_records_fileno;
 		get_record = get_record_fileno;
+		insert_record = insert_record_fileno;
 		return initialize_fileno_context(addr, context, error);
 #endif
 	default:

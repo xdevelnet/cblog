@@ -9,6 +9,10 @@
 #include <stdio.h>
 #include <sys/mman.h>
 
+#if !defined strizeof
+#define strizeof(a) (sizeof(a)-1)
+#endif
+
 struct fileno_context {
 	const void *addr;
 };
@@ -68,7 +72,7 @@ static int comparator(const struct dirent **d1, const struct dirent **d2) {
 	if (s[0].st_mtim.tv_sec == s[1].st_mtim.tv_sec and s[0].st_mtim.tv_nsec == s[1].st_mtim.tv_nsec) return 0;
 	if (abiggerb(s[0].st_mtim, s[1].st_mtim)) return 1;
 	return -1;
-} // todo: asc desc
+}
 
 static void scanfree(struct dirent **e, int amount) {
 	for (int i = 0; i < amount; i++) {
@@ -121,6 +125,7 @@ bool list_records_fileno(unsigned *amount,// Pointer that could be used for limi
 	if (ret == 0 or (unsigned) ret <= offset) return true;
 
 	for (unsigned i = offset; i < (unsigned) ret and *amount < limit; i++) {
+//		if (alike_utf8(e[i]->d_name, looking_for) == false) continue;
 		result_list[*amount] = strtoul(e[i]->d_name, NULL, 10);
 		++*amount;
 	}
@@ -193,5 +198,96 @@ static bool get_record_fileno(struct blog_record *r, unsigned choosen_record, vo
 	r->choosen_record = choosen_record;
 	r->unixepoch.t = s.st_mtim.tv_sec;
 
+	return true;
+}
+
+bool insert_record_fileno(struct blog_record *r, void *context, const char **error) {
+	if (r->recordnamelen > NAME_MAX) {
+		if (error) *error = data_layer_error_invalid_argument;
+		return false;
+	}
+
+	struct fileno_context *f = context;
+	int dfd = open(f->addr, O_DIRECTORY | O_RDONLY);
+	if (dfd < 0) {
+		if (error) *error = strerror(errno);
+		return false;
+	}
+
+	int last = openat(dfd, "last_record", O_RDONLY);
+	if (last < 0) {
+		if (errno != ENOENT) {
+			close(dfd);
+			if (error) *error = strerror(errno);
+			return false;
+		}
+
+		last = openat(dfd, "last_record", O_RDONLY);
+		if (last < 0 or write(last, "1", strizeof("1")) < 0) {
+			close(last);
+			close(dfd);
+			if (error) *error = strerror(errno);
+			return false;
+		}
+	}
+
+	char last_number[strizeof("-2147483648")];
+	ssize_t ret = read(last, last_number, strizeof(last_number));
+	if (ret < 0) {
+		close(last);
+		close(dfd);
+		if (error) *error = strerror(errno);
+		return false;
+	} else if (ret == 0) {
+		ret = write(last, "1", strizeof("1"));
+		close(last);
+		strcpy(last_number, "1");
+		if (ret < 0) {
+			close(dfd);
+			if (error) *error = strerror(errno);
+			return false;
+		}
+	}
+
+	if (emb_isdigit(last_number[0]) == false) {
+		close(last);
+		close(dfd);
+		if (error) *error = data_layer_error_metadata_corrupted;
+		return false;
+	}
+
+	r->choosen_record = strtoul(last_number, NULL, 10);
+
+	mkdirat(dfd, "data", 0700); // make dir if it's not exist. Fail if exist and that's fine.
+	int datadfd = openat(dfd, f->addr, O_DIRECTORY | O_RDONLY);
+	if (datadfd < 0) {
+		close(last);
+		close(dfd);
+		if (error) *error = strerror(errno);
+		return false;
+	}
+
+	char recordname[r->recordnamelen + sizeof('\0')];
+	memcpy(recordname, r->recordname, r->recordnamelen);
+	recordname[r->recordnamelen] = '\0';
+
+	int fd = open(recordname, O_RDWR | O_CREAT | O_EXCL, 0755);
+	if (fd < 0) {
+		close(last);
+		close(dfd);
+		close(datadfd);
+		if (error) *error = strerror(errno);
+		return false;
+	}
+
+	linkat(dfd, last_number, datadfd, recordname, 0);
+	close(dfd);
+	close(datadfd);
+	write(fd, r->recordcontent, r->recordcontentlen);
+	lseek(last, 0, SEEK_SET);
+	ret = sprintf(last_number, "%u", r->choosen_record + 1);
+	write(last, last_number, ret);
+	close(last);
+	close(fd);
 	return true;
 }
