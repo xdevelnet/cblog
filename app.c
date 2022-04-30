@@ -227,6 +227,68 @@ void title_show_tag_processing(reqargs a, int32_t tag, unsigned *i, unsigned ii,
 	}
 }
 
+struct select {
+	unsigned iter;
+	unsigned limit;
+	unsigned long *found;
+	unsigned position;
+};
+
+static inline void selector_show_tag_processing(reqargs a, struct layer_context *l, essb *e, struct blog_record *b, struct select *s) {
+	int32_t tag = -e->record_size[s->iter];
+
+	switch (tag) {
+	case TITLE_PAGE_PART:
+		APP_WRITE(b->recordname, b->recordnamelen);
+		break;
+	case CONTENT_PAGE_PART:
+		APP_WRITE(b->recordcontent, b->recordcontentlen);
+		break;
+	case REPEATTWO_PAGE_PART:
+		if (s->position >= s->limit) break;
+
+		printf("%p %p %u", s, s->found, s->position);
+
+		bool get_record_result = get_record(b,
+											s->found[s->position],
+											l,
+											NULL);
+		s->position++;
+		if (get_record_result == false) {
+			s->iter--;
+			break;
+		}
+
+		rewind_back(e, REPEATONE_PAGE_PART, &(s->iter));
+		break;
+	default:
+		return;
+	}
+}
+
+static void selector(reqargs a, unsigned limit, unsigned offset, ttime_t from, ttime_t to) {
+	struct appcontext *con = CONTEXT;
+	essb *e = &con->templates;
+	struct layer_context *l = &con->layer;
+
+	struct select s = {.limit = limit,};
+	s.found = alloca(sizeof(unsigned long) * limit);
+	if (list_records(&limit, s.found, offset, from, to, l, NULL) == false) return notfound(a);
+	struct blog_record b = {
+		.recordname = config.title_page_name,
+		.recordnamelen = config.title_page_name_len,
+		.recordcontent = config.title_page_content,
+		.recordcontentlen = config.title_page_content_len,
+		.stack = con->freebuffer,
+		.stack_space = CONTEXTAPPBUFFERSIZE - (con->freebuffer - (char *) con)
+	};
+
+	for (; s.iter < e->records_amount; s.iter++) {
+		if (e->record_size[s.iter] < 0) selector_show_tag_processing(a, l, e, &b, &s);
+		else APP_WRITE(&e->records[e->record_seek[s.iter]], e->record_size[s.iter]);
+	}
+}
+
 static void title(reqargs a) {
 	struct appcontext *con = CONTEXT;
 	essb *e = &con->templates;
@@ -244,10 +306,6 @@ static void title(reqargs a) {
 		[TITLE_PAGE_PART]    = config.title_page_name_len,
 		[CONTENT_PAGE_PART]  = config.title_page_content_len,
 	};
-
-//	void (*special[PAGES_MAX])(reqargs) = {
-//		[TITLE_PAGE_PART] = NULL
-//	};
 
 	unsigned ii = 0;
 	for (unsigned i = 0; i < e->records_amount; i++) {
@@ -283,8 +341,6 @@ static inline void record_show_tag_processing(reqargs a, int32_t tag, struct blo
 
 	switch (tag) {
 		case TITLE_PAGE_PART:
-			APP_WRITE(config.appname, config.appnamelen);
-			APP_WRITE(" - ", 3);
 			APP_WRITE(b.recordname, b.recordnamelen);
 			break;
 		case CONTENT_PAGE_PART:
@@ -319,5 +375,6 @@ static void show_record(reqargs a, uint32_t record) {
 void app_request(reqargs a) {
 	if (METHOD != GET or REQUEST_LEN == 0 or REQUEST[0] != '/') return notfound(a);
 	if (REQUEST_LEN == 1 and REQUEST[0] == '/') return title(a);
+	if (REQUEST_LEN == 2 and REQUEST[0] == '/' and REQUEST[1] == 'q') return selector(a, 4, 0, (ttime_t) 0l, (ttime_t) 2147483647l);
 	return show_record(a, get_u32_from_end_of_string(REQUEST, REQUEST_LEN));
 }
