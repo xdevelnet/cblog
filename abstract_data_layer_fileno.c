@@ -9,6 +9,67 @@
 #include <stdio.h>
 #include <sys/mman.h>
 
+const char fileno_data_dir[] = "data";
+const char fileno_datasource_dir[] = "html";
+const char fileno_tag_dir[] = "tags";
+const char fileno_metadata_dir[] = "meta";
+const char fileno_last_record_file[] = "last_record";
+
+/* This engine is operating with the following directory structure
+ *
+ *  /dir/
+ *           data/
+ *                first_file
+ *                second_file
+ *                third_file
+ *                fourth_file
+ *                fifth_file
+ *           html/
+ *                first_file.html
+ *                second_file.html
+ *                third_file.html
+ *                fourth_file.html
+ *                fifth_file.html
+ *           tags/
+ *                travel/
+ *                       1
+ *                photos/
+ *                       2
+ *                       3
+ *           meta/
+ *                1
+ *                2
+ *                3
+ *                4
+ *                5
+ *           1
+ *           2
+ *           3
+ *           4
+ *           5
+ *           last_record
+ *
+ * In this case, 1,2,3,4,5 are symlinks and the are pointing to
+ * data/first_file, data/second_file respectively
+ *
+ * Only softlinks must be used in order to evaluate readlink() on symlink
+ * So, the real file could be accessed among with it's name
+ *
+ * dir/ could be any dir with any name, but "data/" and "html/" are
+ * not configurable on runtime.
+ *
+ * last_record is a file which should contain unsigned integer (at least at
+ * file's start). It should describe the name of new symlink for a new file
+ * after each insert. In this case, last_record should contain "6" (without
+ * double quotes)
+ *
+ * html/ is directory with original data, which is exists only before trans-
+ * forming into data in data/.
+ *
+ * tags/ is a directory with multiple directories. Each directory is tag name.
+ * Each symlink inside is a member of each tag.
+ */
+
 #if !defined strizeof
 #define strizeof(a) (sizeof(a)-1)
 #endif
@@ -29,7 +90,19 @@ static bool initialize_fileno_context(const void *addr, void *context, const cha
 	struct fileno_context *ret = context;
 	memset(ret, 0, sizeof(struct fileno_context));
 	ret->addr = addr;
+	int dfd = open(addr, O_DIRECTORY | O_RDONLY);
+	if (dfd < 0) goto fail;
+
+	if (mkdirat(dfd, fileno_data_dir, 0700) != 0 and errno != EEXIST) goto fail;
+	if (mkdirat(dfd, fileno_datasource_dir, 0700) != 0 and errno != EEXIST) goto fail;
+	if (mkdirat(dfd, fileno_tag_dir, 0700) != 0 and errno != EEXIST) goto fail;
+	if (mkdirat(dfd, fileno_metadata_dir, 0700) != 0 and errno != EEXIST) goto fail;
 	return true;
+
+fail:
+	close(dfd);
+	if (error) *error = strerror(errno);
+	return false;
 }
 
 void deinitialize_engine_fileno(void *context) {
@@ -214,7 +287,7 @@ bool insert_record_fileno(struct blog_record *r, void *context, const char **err
 		return false;
 	}
 
-	int last = openat(dfd, "last_record", O_RDONLY);
+	int last = openat(dfd, fileno_last_record_file, O_RDWR);
 	if (last < 0) {
 		if (errno != ENOENT) {
 			close(dfd);
@@ -222,7 +295,7 @@ bool insert_record_fileno(struct blog_record *r, void *context, const char **err
 			return false;
 		}
 
-		last = openat(dfd, "last_record", O_RDONLY);
+		last = openat(dfd, fileno_last_record_file, O_RDONLY);
 		if (last < 0 or write(last, "1", strizeof("1")) < 0) {
 			close(last);
 			close(dfd);
@@ -231,7 +304,7 @@ bool insert_record_fileno(struct blog_record *r, void *context, const char **err
 		}
 	}
 
-	char last_number[strizeof("-2147483648")];
+	char last_number[strizeof("4294967296")];
 	ssize_t ret = read(last, last_number, strizeof(last_number));
 	if (ret < 0) {
 		close(last);
@@ -241,13 +314,15 @@ bool insert_record_fileno(struct blog_record *r, void *context, const char **err
 	} else if (ret == 0) {
 		ret = write(last, "1", strizeof("1"));
 		close(last);
-		strcpy(last_number, "1");
+		last_number[0] = '1';
 		if (ret < 0) {
 			close(dfd);
 			if (error) *error = strerror(errno);
 			return false;
 		}
 	}
+
+	last_number[ret] = '\0';
 
 	if (emb_isdigit(last_number[0]) == false) {
 		close(last);
@@ -257,9 +332,9 @@ bool insert_record_fileno(struct blog_record *r, void *context, const char **err
 	}
 
 	r->choosen_record = strtoul(last_number, NULL, 10);
+	sprintf(last_number, "%u", r->choosen_record);
 
-	mkdirat(dfd, "data", 0700); // make dir if it's not exist. Fail if exist and that's fine.
-	int datadfd = openat(dfd, f->addr, O_DIRECTORY | O_RDONLY);
+	int datadfd = openat(dfd, fileno_data_dir, O_DIRECTORY | O_RDONLY);
 	if (datadfd < 0) {
 		close(last);
 		close(dfd);
@@ -271,20 +346,23 @@ bool insert_record_fileno(struct blog_record *r, void *context, const char **err
 	memcpy(recordname, r->recordname, r->recordnamelen);
 	recordname[r->recordnamelen] = '\0';
 
-	int fd = open(recordname, O_RDWR | O_CREAT | O_EXCL, 0755);
+	int fd = openat(datadfd, recordname, O_RDWR | O_CREAT | O_EXCL, 0644);
+	close(datadfd);
 	if (fd < 0) {
 		close(last);
 		close(dfd);
-		close(datadfd);
 		if (error) *error = strerror(errno);
 		return false;
 	}
 
-	linkat(dfd, last_number, datadfd, recordname, 0);
+	char path[PATH_MAX];
+	sprintf(path, "%s/%s", fileno_data_dir, recordname);
+	//linkat(datadfd, recordname, dfd, last_number, 0); // hard links are not valid but api is perfect!
+	symlinkat(path, dfd, last_number);
 	close(dfd);
-	close(datadfd);
 	write(fd, r->recordcontent, r->recordcontentlen);
 	lseek(last, 0, SEEK_SET);
+	ftruncate(last, 0);
 	ret = sprintf(last_number, "%u", r->choosen_record + 1);
 	write(last, last_number, ret);
 	close(last);

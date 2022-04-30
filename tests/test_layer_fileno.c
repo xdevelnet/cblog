@@ -37,5 +37,18 @@ int main() {
 		}
 	}
 
+	for (unsigned i = 0; i < 1; i++) {
+		char buffer[512] = "<p>Hello world!</p>";
+		struct blog_record b = {.recordname = "Hello page",
+			.recordnamelen = strizeof("Hello page"),
+			.recordcontent = buffer,
+			.recordcontentlen = strizeof(buffer)
+		};
+
+		if (insert_record(&b, &con, &error) == false) {
+			printf("insert_record() failed! Reason: %s", error);
+		}
+	}
+
 	return EXIT_SUCCESS;
 }
