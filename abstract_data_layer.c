@@ -2,6 +2,10 @@
 #include <time.h>
 #include <stdbool.h>
 
+#include "../md4c/src/md4c.c"
+#include "../md4c/src/md4c-html.c"
+#include "../md4c/src/entity.c"
+
 typedef union {
 	time_t t;
 	char spare[8];

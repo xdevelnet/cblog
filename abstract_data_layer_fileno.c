@@ -274,6 +274,11 @@ static bool get_record_fileno(struct blog_record *r, unsigned choosen_record, vo
 	return true;
 }
 
+void markdown_output_process(const char *data, unsigned size, void *context) {
+	int *fd = context;
+	write(*fd, data, size);
+}
+
 bool insert_record_fileno(struct blog_record *r, void *context, const char **error) {
 	if (r->recordnamelen > NAME_MAX) {
 		if (error) *error = data_layer_error_invalid_argument;
@@ -342,16 +347,31 @@ bool insert_record_fileno(struct blog_record *r, void *context, const char **err
 		return false;
 	}
 
+	int datasourcedfd = openat(dfd, fileno_datasource_dir, O_DIRECTORY | O_RDONLY);
+	if (datasourcedfd < 0) {
+		close(last);
+		close(dfd);
+		close(datadfd);
+		if (error) *error = strerror(errno);
+		return false;
+	}
+
 	char recordname[r->recordnamelen + sizeof('\0')];
 	memcpy(recordname, r->recordname, r->recordnamelen);
 	recordname[r->recordnamelen] = '\0';
 
 	int fd = openat(datadfd, recordname, O_RDWR | O_CREAT | O_EXCL, 0644);
+	int sfd = openat(datasourcedfd, recordname, O_RDWR | O_CREAT | O_EXCL, 0644);
+
 	close(datadfd);
-	if (fd < 0) {
+	close(datasourcedfd);
+
+	if (fd < 0 or sfd < 0) {
 		close(last);
 		close(dfd);
 		if (error) *error = strerror(errno);
+		close(fd);
+		close(sfd);
 		return false;
 	}
 
@@ -360,12 +380,16 @@ bool insert_record_fileno(struct blog_record *r, void *context, const char **err
 	//linkat(datadfd, recordname, dfd, last_number, 0); // hard links are not valid but api is perfect!
 	symlinkat(path, dfd, last_number);
 	close(dfd);
-	write(fd, r->recordcontent, r->recordcontentlen);
+	md_html(r->recordcontent, r->recordcontentlen, markdown_output_process, &fd, 0, 0);
+	//write(fd, r->recordcontent, r->recordcontentlen); // TODO: convert
+	write(sfd, r->recordcontent, r->recordcontentlen);
+	close(fd);
+	close(sfd);
+
 	lseek(last, 0, SEEK_SET);
 	ftruncate(last, 0);
 	ret = sprintf(last_number, "%u", r->choosen_record + 1);
 	write(last, last_number, ret);
 	close(last);
-	close(fd);
 	return true;
 }
