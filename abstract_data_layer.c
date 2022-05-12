@@ -9,20 +9,27 @@
 typedef union {
 	time_t t;
 	char spare[8];
-} ttime_t;
+} unix_epoch;
+
+enum record_display {DISPLAY_INVALID, DISPLAY_SOURCE, DISPLAY_DATA, DISPLAY_BOTH};
 
 struct blog_record {
 	void *stack;
-	size_t stack_space; // Pass here the amount of stack you have BEFORE executing get_record().
-	                    // This variable will have the following values AFTER executing get_record():
+	size_t stack_space; // Pass here the amount of stack you have BEFORE executing get_record() or other functions.
+	                    // This variable will have the following values AFTER executing such functions.
 	                    // 1. If not enough space on stack, place here the amount of bytes that is needed.
 	                    // 2. If it's enough space, place here the used amount of bytes.
-	unsigned recordnamelen;
-	const char *recordname;
-	unsigned recordcontentlen;
-	const char *recordcontent;
-	unsigned choosen_record; // decimal that represents record in database
-	ttime_t unixepoch;   // seconds since unix epoch.
+	unsigned titlelen;
+	const char *title;
+	enum record_display display;
+	unsigned datasourcelen;
+	const char *datasource; // the common source of data for displaying. Usually html
+	unsigned datalen;
+	const char *data; // the second source of data. Sometimes could be displayed, but usually is used as predecessor for datasource
+	unsigned long choosen_record; // decimal that represents record in database
+	unix_epoch creation_date;
+	unix_epoch modification_date;   // seconds since unix epoch.
+	char **tags; // array with tags. Empty string means end of this array.
 };
 
 struct layer_context {
@@ -32,7 +39,9 @@ struct layer_context {
 	uint32_t d;
 	uint32_t e;
 	uint32_t f;
-}; // 24 byte context is probably enough for any engine needs
+	uint32_t g;
+	uint32_t h;
+}; // 36 byte context is probably enough for any engine needs
 
 const char data_layer_error_init[] = "Data layer haven't been initialized";
 const char data_layer_error_havent_implemented[] = "Selected data layer engine still not implemented";
@@ -40,25 +49,52 @@ const char data_layer_error_wrong_engine[] = "Wrong engine selected";
 const char data_layer_error_not_enough_stack_space[] = "Not enough stack space in choosen region";
 const char data_layer_error_metadata_corrupted[] = "Metadata corrupted. Storage engine can't be used.";
 const char data_layer_error_invalid_argument[] = "Invalid argument.";
+const char data_layer_error_invalid_argument_utf8[] = "One of the arguments contains invalid utf-8 string";
+const char data_layer_error_record_already_exist[] = "You are attempting to insert a record that's already exist";
+const char data_layer_error_unable_to_process_kval[] = "Operation with choosen key-value pair wasn't successful";
 
-bool list_records_dummy(unsigned *amount, unsigned long *result_list, unsigned offset, ttime_t from, ttime_t to, void *context, const char **error) {
+bool list_records_dummy(unsigned *amount, unsigned long *result_list, unsigned offset, unix_epoch from, unix_epoch to, void *context, const char **error) {
 	*error = data_layer_error_init;
 	return false;
 }
 
 bool get_record_dummy(struct blog_record *r, unsigned choosen_record, void *context, const char **error) {
+	UNUSED(r);
+	UNUSED(choosen_record);
+	UNUSED(context);
+
 	*error = data_layer_error_init;
 	return false;
 }
 
 bool insert_record_dummy(struct blog_record *r, void *context, const char **error) {
+	UNUSED(r);
+	UNUSED(context);
+
 	*error = data_layer_error_init;
 	return false;
 }
 
-bool (*list_records)(unsigned *, unsigned long *, unsigned, ttime_t, ttime_t, void *, const char **) = list_records_dummy;
+bool key_val_dummy(const char *key, void *value, ssize_t *size, void *context, const char **error) {
+	UNUSED(key);
+	UNUSED(value);
+	UNUSED(size);
+	UNUSED(context);
+
+	*error = data_layer_error_init;
+	return false;
+}
+
+bool (*list_records)(unsigned *, unsigned long *, unsigned, unix_epoch, unix_epoch, void *, const char **) = list_records_dummy;
+// attempt to fill a limited-size array integers which corresponds record's id
 bool (*get_record)(struct blog_record *, unsigned , void *, const char **) = get_record_dummy;
+// retrieve blog_record itself into empty structure. Non-empty structures are prohibited because of stack usage
 bool (*insert_record)(struct blog_record *, void *, const char **) = insert_record_dummy;
+// insert a blog_record
+bool (*key_val)(const char *, void *, ssize_t *, void *, const char **) = key_val_dummy;
+// simple key-value storage. if size equals zero - we're checking if pair exists.
+// If size is greater then zero, we're attempting to insert a new record
+// If size is less then zero, we're attempting to retrieve a record
 
 #ifdef DATA_LAYER_MYSQL
 #include "abstract_data_layer_mysql.c"
@@ -84,6 +120,7 @@ bool initialize_engine(enum datalayer_engines e, const void *addr, void *context
 		list_records = list_records_mysql;
 		get_record = get_record_mysql;
 		insert_record = insert_record_mysql;
+		key_val = key_val_mysql;
 		return initialize_mysql_context(addr, context, error);
 #endif
 #ifdef DATA_LAYER_FILENO
@@ -91,6 +128,7 @@ bool initialize_engine(enum datalayer_engines e, const void *addr, void *context
 		list_records = list_records_fileno;
 		get_record = get_record_fileno;
 		insert_record = insert_record_fileno;
+		key_val = key_val_fileno;
 		return initialize_fileno_context(addr, context, error);
 #endif
 	default:
