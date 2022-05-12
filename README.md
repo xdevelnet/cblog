@@ -66,8 +66,8 @@ Application features:
 |supported backend engines|Done|**Mongoose:** allows to compile app and web server to single binary.<br />**Fastcgi (nginx):** Requires web server configuration|
 |Multiple template support|Done, but only one template is enabled|Abstracted in essb library that were written particularly for this project.<br />Two templates were already done|
 |Multiple L10n support|Done, but not enabled at all|Abstracted in tssb library that were written particularly for this project
-|Markdown pages|Planned|When user makes new blog record, app expects markdown format. It saves original .md and transforms it to html that will be included during runtime|
-|Tags support|Planned|Tags design are already present in my templates|
+|Markdown pages|Partially done|When user makes new blog record, app may expect markdown format. If no html provided it will automatically transform markdown into html|
+|Tags support|Partially done|Tags design are already present in my templates. Tags are already present in fileno storage|
 |CI<br />Pre-built packages,<br />Docker images|Planned|CI done only for subprojects (ssb)|
 |Tests|Partially done|Done only for one module|
 |Pages|Partially done|Title page with displaying multiple blog records, single record page, 404 page|
