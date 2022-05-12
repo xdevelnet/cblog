@@ -81,7 +81,7 @@ void (*app_write) (const void *, unsigned long, void *);
 
 const char *headers_table[] = {"Content-Type: text/html;charset=utf-8", "Server: OLOLOLO TROLOLO", NULL};
 
-#define CONTEXTAPPBUFFERSIZE 262144
+#define CONTEXTAPPBUFFERSIZE 524288
 
 // expected pages
 
@@ -210,12 +210,12 @@ void title_show_tag_processing(reqargs a, int32_t tag, unsigned *i, unsigned ii,
 		case TITLE_PAGE_PART:
 			if (ii == 0) {APP_WRITE(title_page_name, title_page_name_len); break;}
 			APP_WRITECS("<a href=\"/");
-			APP_WRITE(b->recordname, b->recordnamelen);
+			APP_WRITE(b->title, b->titlelen);
 			APP_WRITECS("-");
 			char buffer[10];
-			APP_WRITE(buffer, snprintf(buffer, sizeof(buffer), "%u", b->choosen_record));
+			APP_WRITE(buffer, snprintf(buffer, sizeof(buffer), "%lu", b->choosen_record));
 			APP_WRITECS("\">");
-			APP_WRITE(b->recordname, b->recordnamelen);
+			APP_WRITE(b->title, b->titlelen);
 			APP_WRITECS("</a>");
 			break;
 		case CONTENT_PAGE_PART:
@@ -239,10 +239,10 @@ static inline void selector_show_tag_processing(reqargs a, struct layer_context 
 
 	switch (tag) {
 	case TITLE_PAGE_PART:
-		APP_WRITE(b->recordname, b->recordnamelen);
+		APP_WRITE(b->title, b->titlelen);
 		break;
 	case CONTENT_PAGE_PART:
-		APP_WRITE(b->recordcontent, b->recordcontentlen);
+		APP_WRITE(b->datasource, b->datasourcelen);
 		break;
 	case REPEATTWO_PAGE_PART:
 		if (s->position >= s->limit) break;
@@ -266,7 +266,7 @@ static inline void selector_show_tag_processing(reqargs a, struct layer_context 
 	}
 }
 
-static void selector(reqargs a, unsigned limit, unsigned offset, ttime_t from, ttime_t to) {
+static void selector(reqargs a, unsigned limit, unsigned offset, unix_epoch from, unix_epoch to) {
 	struct appcontext *con = CONTEXT;
 	essb *e = &con->templates;
 	struct layer_context *l = &con->layer;
@@ -275,10 +275,10 @@ static void selector(reqargs a, unsigned limit, unsigned offset, ttime_t from, t
 	s.found = alloca(sizeof(unsigned long) * limit);
 	if (list_records(&limit, s.found, offset, from, to, l, NULL) == false) return notfound(a);
 	struct blog_record b = {
-		.recordname = config.title_page_name,
-		.recordnamelen = config.title_page_name_len,
-		.recordcontent = config.title_page_content,
-		.recordcontentlen = config.title_page_content_len,
+		.title = config.title_page_name,
+		.titlelen = config.title_page_name_len,
+		.datasource = config.title_page_content,
+		.datasourcelen = config.title_page_content_len,
 		.stack = con->freebuffer,
 		.stack_space = CONTEXTAPPBUFFERSIZE - (con->freebuffer - (char *) con)
 	};
@@ -296,7 +296,7 @@ static void title(reqargs a) {
 
 	unsigned amount = HOW_MANY_RECORDS_U_WANT_TO_SEE_ON_TITLEPAGE;
 	unsigned long found[HOW_MANY_RECORDS_U_WANT_TO_SEE_ON_TITLEPAGE];
-	if (list_records(&amount, found, 0, (ttime_t) 0l, (ttime_t) 2147483647l, l, NULL) == false) return notfound(a);
+	if (list_records(&amount, found, 0, (unix_epoch) 0l, (unix_epoch) 2147483647l, l, NULL) == false) return notfound(a);
 
 	const char *out[PAGES_MAX] = {
 		[TITLE_PAGE_PART]    = config.title_page_name,
@@ -324,12 +324,12 @@ static void title(reqargs a) {
 			};
 
 			if (get_record(&b, found[ii], l, NULL) == true) {
-				char *f = util_memmem(b.recordcontent, b.recordcontentlen, "<!-- break -->", strizeof("<!-- break -->"));
-				if (f) b.recordcontentlen -= b.recordcontentlen - (f - b.recordcontent);
-				out[TITLE_PAGE_PART] = b.recordname;
-				out[CONTENT_PAGE_PART] = b.recordcontent;
-				outsizes[TITLE_PAGE_PART] = b.recordnamelen;
-				outsizes[CONTENT_PAGE_PART] = b.recordcontentlen;
+				char *f = util_memmem(b.datasource, b.datasourcelen, "<!-- break -->", strizeof("<!-- break -->"));
+				if (f) b.datasourcelen -= b.datasourcelen - (f - b.datasource);
+				out[TITLE_PAGE_PART] = b.title;
+				out[CONTENT_PAGE_PART] = b.datasource;
+				outsizes[TITLE_PAGE_PART] = b.titlelen;
+				outsizes[CONTENT_PAGE_PART] = b.datasourcelen;
 			}
 			ii++;
 		}
@@ -341,10 +341,10 @@ static inline void record_show_tag_processing(reqargs a, int32_t tag, struct blo
 
 	switch (tag) {
 		case TITLE_PAGE_PART:
-			APP_WRITE(b.recordname, b.recordnamelen);
+			APP_WRITE(b.title, b.titlelen);
 			break;
 		case CONTENT_PAGE_PART:
-			APP_WRITE(b.recordcontent, b.recordcontentlen);
+			APP_WRITE(b.datasource, b.datasourcelen);
 			break;
 		default:
 			return;
@@ -375,6 +375,6 @@ static void show_record(reqargs a, uint32_t record) {
 void app_request(reqargs a) {
 	if (METHOD != GET or REQUEST_LEN == 0 or REQUEST[0] != '/') return notfound(a);
 	if (REQUEST_LEN == 1 and REQUEST[0] == '/') return title(a);
-	if (REQUEST_LEN == 2 and REQUEST[0] == '/' and REQUEST[1] == 'q') return selector(a, 4, 0, (ttime_t) 0l, (ttime_t) 2147483647l);
+	if (REQUEST_LEN == 2 and REQUEST[0] == '/' and REQUEST[1] == 'q') return selector(a, 4, 0, (unix_epoch) 0l, (unix_epoch) 2147483647l);
 	return show_record(a, get_u32_from_end_of_string(REQUEST, REQUEST_LEN));
 }
