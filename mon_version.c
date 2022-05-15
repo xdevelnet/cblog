@@ -1,3 +1,6 @@
+#define _DEFAULT_SOURCE
+#define _BSD_SOURCE
+
 #include <signal.h>
 #include <iso646.h>
 #include "mongoose.h"
