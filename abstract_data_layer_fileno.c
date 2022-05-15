@@ -408,8 +408,33 @@ static bool get_record_fileno(struct blog_record *r, unsigned choosen_record, vo
 
 	bool parse_result = parse_metadata(meta, r, error);
 	close(meta);
-
 	if (parse_result == false) return false;
+
+	int fd[2] = {-1, -1};
+
+	if (r->display == DISPLAY_BOTH or r->display == DISPLAY_DATA) {
+		memcpy(name, r->data, r->datalen);
+		name[r->datalen] = '\0';
+		fd[0] = openat(f->datafd, name, O_RDONLY);
+		if (fd[0] >= 0) {
+			ssize_t got = read(fd[0], r->stack, r->stack_space);
+			if (got > 0) r->stack_space -= got;
+			close(fd[0]);
+		}
+	}
+
+	if (r->display == DISPLAY_BOTH or r->display == DISPLAY_SOURCE) {
+		memcpy(name, r->datasource, r->datasourcelen);
+		name[r->datasourcelen] = '\0';
+		fd[1] = openat(f->datasourcefd, name, O_RDONLY);
+		if (fd[1] >= 0) {
+			ssize_t got = read(fd[1], r->stack, r->stack_space);
+			if (got > 0) r->stack_space -= got;
+			close(fd[1]);
+		}
+	}
+
+	if (fd[0] < 0 and fd[1] < 0) return false;
 
 	return true;
 }
