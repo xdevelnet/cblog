@@ -11,19 +11,16 @@
 #include "../util.c"
 #include "../abstract_data_layer.c"
 
-static int unlink_cb(const char *fpath, const struct stat *sb, int typeflag, struct FTW *ftwbuf)
-{
-    int rv = remove(fpath);
+static int unlink_cb(const char *fpath, const struct stat *sb, int typeflag, struct FTW *ftwbuf) {
+	int rv = remove(fpath);
 
-    if (rv)
-        perror(fpath);
+	if (rv) perror(fpath);
 
-    return rv;
+	return rv;
 }
 
-static inline int rmrf(char *path)
-{
-    return nftw(path, unlink_cb, 64, FTW_DEPTH | FTW_PHYS);
+static inline int rmrf(char *path) {
+	return nftw(path, unlink_cb, 64, FTW_DEPTH | FTW_PHYS);
 }
 
 #define TESTSETPATH "fileno_testset"
