@@ -418,8 +418,15 @@ static bool get_record_fileno(struct blog_record *r, unsigned choosen_record, vo
 		fd[0] = openat(f->datafd, name, O_RDONLY);
 		if (fd[0] >= 0) {
 			ssize_t got = read(fd[0], r->stack, r->stack_space);
-			if (got > 0) r->stack_space -= got;
 			close(fd[0]);
+			if (got > 0) {
+				r->stack_space -= got;
+				r->data = r->stack;
+				r->stack += (size_t) got;
+				r->datalen = (unsigned) got;
+			} else {
+				r->datalen = 0;
+			}
 		}
 	}
 
@@ -429,8 +436,15 @@ static bool get_record_fileno(struct blog_record *r, unsigned choosen_record, vo
 		fd[1] = openat(f->datasourcefd, name, O_RDONLY);
 		if (fd[1] >= 0) {
 			ssize_t got = read(fd[1], r->stack, r->stack_space);
-			if (got > 0) r->stack_space -= got;
 			close(fd[1]);
+			if (got > 0) {
+				r->stack_space -= got;
+				r->datasource = r->stack;
+				r->stack += (size_t) got;
+				r->datasourcelen = (unsigned) got;
+			} else {
+				r->datasourcelen = 0;
+			}
 		}
 	}
 
