@@ -1,5 +1,16 @@
+#ifndef GUARD_UTIL_C
+#define GUARD_UTIL_C
+
 #include <string.h>
 #include <stdbool.h>
+
+#if !defined strizeof
+#define strizeof(a) (sizeof(a)-1)
+#endif
+
+#if !defined STRINGIZE
+#define STRINGIZE(a) #a
+#endif
 
 #if !defined MAX
 #define MAX(a,b) (((a)>(b))?(a):(b))
@@ -7,6 +18,14 @@
 
 #if !defined UNUSED
 #define UNUSED(x) (void)(x)
+#endif
+
+#if !defined STREQ
+#define STREQ (0)
+#endif
+
+#if !defined STRNEQ
+#define STRNEQ (1)
 #endif
 
 // the maximum amount of bytes that's required to express integers as string
@@ -18,6 +37,13 @@
 #define CBL_INT16_STR_MAX strizeof("-32767") // -1
 #define CBL_INT32_STR_MAX strizeof("-2147483647")
 #define CBL_INT64_STR_MAX strizeof("-9223372036854775807")
+
+char strpartcmp(char *str, char *part) {
+	while (1) {
+		if (*part == 0) return STREQ;
+		if (*(str++) != *(part++)) return STRNEQ;
+	}
+}
 
 const unsigned char *utf8_check(const void *a){
 	const unsigned char *s = a;
@@ -161,3 +187,5 @@ static bool is_str_unsignedint(const char *p) {
 
 	return true;
 }
+
+#endif // GUARD_UTIL_C
