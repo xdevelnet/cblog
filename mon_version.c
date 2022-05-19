@@ -5,6 +5,7 @@
 #include <iso646.h>
 #include "mongoose.h"
 #include "app.c"
+#include "common.c"
 
 static int s_signo = 0;
 static void signal_handler(int signo) {
@@ -73,22 +74,19 @@ static void cb(struct mg_connection *c, int ev, void *ev_data, void *fn_data) {
 	mg_http_write_chunk(c, "", 0);
 }
 
-int main() {
+int main(int argc, char **argv) {
 	signal(SIGINT, signal_handler);
 	signal(SIGTERM, signal_handler);
 	locate_header = locate_header_fun;
-
-	// here you can add cli parsing or even config file reading
-	config.appname = default_appname;
-	config.appnamelen = default_appnamelen;
-	config.template_type = default_template_type;
-	config.temlate_name = default_template_name;
-	config.datalayer_type = default_datalayer_type;
-	config.datalayer_addr = default_datalayer_addr;
-	config.title_page_name = default_title_page_name;
-	config.title_page_name_len = default_title_page_len;
-	config.title_page_content = default_title_content;
-	config.title_page_content_len = default_title_content_len;
+	set_config_defaults(&config);
+	if (argc > 1) {
+		const char *error;
+		bool ret = parse_config(&config, argv[1], &error);
+		if (ret == false) {
+			printf("%s\n", error);
+			return ret;
+		}
+	}
 
 	struct mg_mgr mgr;
 	mg_mgr_init(&mgr);
@@ -96,10 +94,12 @@ int main() {
 	char contextbuffer[CONTEXTAPPBUFFERSIZE];
 	void *appcontext = contextbuffer;
 	if (app_prepare(&appcontext) == false) {
+		parse_config_erase(&config);
 		MG_ERROR(("Unable to initialize app"));
 		return EXIT_FAILURE;
 	}
 	if ((mg_http_listen(&mgr, "http://0.0.0.0:8000", cb, appcontext)) == NULL) {
+		parse_config_erase(&config);
 		MG_ERROR(("Cannot listen!"));
 		return EXIT_FAILURE;
 	}
@@ -107,5 +107,6 @@ int main() {
 	while (s_signo == 0) mg_mgr_poll(&mgr, 1000);
 	mg_mgr_free(&mgr);
 	app_finish(appcontext);
+	parse_config_erase(&config);
 	return EXIT_SUCCESS;
 }

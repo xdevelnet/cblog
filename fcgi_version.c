@@ -25,6 +25,7 @@
 #include <fcgios.h>
 
 #include "app.c"
+#include "common.c"
 
 const char * const sockpath = "/tmp/cblog.sock";
 
@@ -136,7 +137,7 @@ void *worker(void *arg) {
 	return NULL;
 }
 
-int main() {
+int main(int argc, char **argv) {
 	fd = FCGX_OpenSocket(sockpath, 128);
 	FCGX_Init();
 	if (fd < 0) return EXIT_FAILURE;
@@ -145,22 +146,21 @@ int main() {
 	signal(SIGTERM, signal_handler); // even if it's still received. Thats a todo.
 	locate_header = locate_header_fun;
 
-	// here you can add cli parsing or even config file reading
-	config.appname = default_appname;
-	config.appnamelen = default_appnamelen;
-	config.template_type = default_template_type;
-	config.temlate_name = default_template_name;
-	config.datalayer_type = default_datalayer_type;
-	config.datalayer_addr = default_datalayer_addr;
-	config.title_page_name = default_title_page_name;
-	config.title_page_name_len = default_title_page_len;
-	config.title_page_content = default_title_content;
-	config.title_page_content_len = default_title_content_len;
+	set_config_defaults(&config);
+	if (argc > 1) {
+		const char *error;
+		bool ret = parse_config(&config, argv[1], &error);
+		if (ret == false) {
+			printf("%s\n", error);
+			return ret;
+		}
+	}
 
 	char contextbuffer[sizeof(struct appcontext)];
 	void *appcontext = contextbuffer;
 	if (app_prepare(&appcontext) == false) {
 		printf("Unable to initialize app");
+		parse_config_erase(&config);
 		return EXIT_FAILURE;
 	}
 
@@ -175,6 +175,7 @@ int main() {
 	}
 	app_finish(appcontext);
 	unlink(sockpath);
+	parse_config_erase(&config);
 	OS_LibShutdown(); // IMO function should be exported.
 
 	return EXIT_SUCCESS;
