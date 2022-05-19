@@ -1,10 +1,5 @@
-#if !defined strizeof
-#define strizeof(a) (sizeof(a)-1)
-#endif
-
-#if !defined STRINGIZE
-#define STRINGIZE(a) #a
-#endif
+#ifndef GUARD_APP_C
+#define GUARD_APP_C
 
 #include "util.c"
 
@@ -15,29 +10,9 @@
 
 #include "default_rodata.h"
 
-typedef enum {POST, GET, PUT, PATCH, DELETE, UNKNOWN} http_methods;
-
-http_methods http_determine_method(const char *ptr, size_t len) {
-	switch (len) {
-		case strizeof("GET"): // also case strizeof("PUT"):
-			if (memcmp(ptr, "GET", strizeof("GET")) == 0) return GET;
-			if (memcmp(ptr, "PUT", strizeof("PUT")) == 0) return PUT;
-			return UNKNOWN;
-		case strizeof("POST"):
-			if (memcmp(ptr, "POST", strizeof("POST")) == 0) return POST;
-			return UNKNOWN;
-		case strizeof("DELETE"):
-			if (memcmp(ptr, "DELETE", strizeof("DELETE")) == 0) return DELETE;
-			return UNKNOWN;
-		case strizeof("PATCH"):
-			if (memcmp(ptr, "PATCH", strizeof("PATCH")) == 0) return PATCH;
-			// fallthrough
-		default:
-			return UNKNOWN;
-	}
-}
-
 struct appconfig {
+	void *context;
+	size_t contextsize;
 	const char *appname;
 	size_t appnamelen;
 	enum datalayer_engines datalayer_type;
@@ -56,6 +31,7 @@ struct appcontext {
 	char freebuffer[];
 };
 
+typedef enum {POST, GET, PUT, PATCH, DELETE, UNKNOWN} http_methods;
 typedef struct reqargs {
 	const char *request;
 	size_t request_len;
@@ -87,14 +63,36 @@ const char *headers_table[] = {"Content-Type: text/html;charset=utf-8", "Server:
 
 enum pages {
 	TITLE_PAGE_PART     = 1,
-	FOOTER_PAGE_PART    = 2,
-	CONTENT_PAGE_PART   = 3,
-	REPEATONE_PAGE_PART = 4,
-	REPEATTWO_PAGE_PART = 5,
+	SITENAME_PAGE_PART  = 2,
+	FOOTER_PAGE_PART    = 3,
+	CONTENT_PAGE_PART   = 4,
+	REPEATONE_PAGE_PART = 5,
+	REPEATTWO_PAGE_PART = 6,
 	PAGES_MAX
 };
 
+http_methods http_determine_method(const char *ptr, size_t len) {
+	switch (len) {
+	case strizeof("GET"): // also case strizeof("PUT"):
+		if (memcmp(ptr, "GET", strizeof("GET")) == 0) return GET;
+		if (memcmp(ptr, "PUT", strizeof("PUT")) == 0) return PUT;
+		return UNKNOWN;
+	case strizeof("POST"):
+		if (memcmp(ptr, "POST", strizeof("POST")) == 0) return POST;
+		return UNKNOWN;
+	case strizeof("DELETE"):
+		if (memcmp(ptr, "DELETE", strizeof("DELETE")) == 0) return DELETE;
+		return UNKNOWN;
+	case strizeof("PATCH"):
+		if (memcmp(ptr, "PATCH", strizeof("PATCH")) == 0) return PATCH;
+		// fallthrough
+	default:
+		return UNKNOWN;
+	}
+}
+
 #define TITILE_PAGE_NAME "title"
+#define SITE_NAME "sitename"
 #define FOOTER_PAGE_NAME "footer"
 #define CONTENT_PAGE_NAME "content"
 #define REPEATONE_PAGE_NAME "repeat_1"
@@ -112,6 +110,7 @@ static inline int32_t template_tag_to_number(const char *name, int32_t length) {
 		if (memcmp(name, CONTENT_PAGE_NAME, -length) == 0) return -CONTENT_PAGE_PART;
 		return -length;
 	case strizeof(REPEATONE_PAGE_NAME):
+		if (memcmp(name, SITE_NAME, -length) == 0) return -SITENAME_PAGE_PART;
 		if (memcmp(name, REPEATONE_PAGE_NAME, -length) == 0) return -REPEATONE_PAGE_PART;
 		if (memcmp(name, REPEATTWO_PAGE_NAME, -length) == 0) return -REPEATTWO_PAGE_PART;
 		return -length;
@@ -177,10 +176,12 @@ static void notfound(reqargs a) {
 	SET_HTTP_STATUS_AND_HDR(404, headers_table);
 
 	const char *out[PAGES_MAX] = {
+		[SITENAME_PAGE_PART] = config.appname,
 		[TITLE_PAGE_PART]    = "404 NOT FOUND",
 		[CONTENT_PAGE_PART]  = "Sorry but we can't find content that you are looking for :(",
 	};
 	size_t outsizes[PAGES_MAX] = {
+		[SITENAME_PAGE_PART] = config.appnamelen,
 		[TITLE_PAGE_PART]    = strizeof("404 NOT FOUND"),
 		[CONTENT_PAGE_PART]  = strizeof("Sorry but we can't find content that you are looking for :("),
 	};
@@ -198,35 +199,6 @@ static void rewind_back(essb *e, long looking_for, unsigned *position) {
 	--*position;
 }
 
-void title_show_tag_processing(reqargs a, int32_t tag, unsigned *i, unsigned ii, struct blog_record *b) {
-	tag = -tag;
-
-	const char *title_page_name = config.title_page_name;
-	size_t title_page_name_len = config.title_page_name_len;
-	const char *title_page_content = config.title_page_content;
-	size_t title_page_content_len = config.title_page_content_len;
-
-	switch (tag) {
-		case TITLE_PAGE_PART:
-			if (ii == 0) {APP_WRITE(title_page_name, title_page_name_len); break;}
-			APP_WRITECS("<a href=\"/");
-			APP_WRITE(b->title, b->titlelen);
-			APP_WRITECS("-");
-			char buffer[10];
-			APP_WRITE(buffer, snprintf(buffer, sizeof(buffer), "%lu", b->choosen_record));
-			APP_WRITECS("\">");
-			APP_WRITE(b->title, b->titlelen);
-			APP_WRITECS("</a>");
-			break;
-		case CONTENT_PAGE_PART:
-			if (ii == 0) {APP_WRITE(title_page_content, title_page_content_len); break;}
-
-			break;
-		default:
-			return;
-	}
-}
-
 struct select {
 	unsigned iter;
 	unsigned limit;
@@ -234,10 +206,17 @@ struct select {
 	unsigned position;
 };
 
-static inline void selector_show_tag_processing(reqargs a, struct layer_context *l, essb *e, struct blog_record *b, struct select *s) {
+static inline void selector_show_tag_processing(reqargs a, struct blog_record *b, struct select *s) {
+	struct appcontext *con = CONTEXT;
+	essb *e = &con->templates;
+	struct layer_context *l = &con->layer;
+
 	int32_t tag = -e->record_size[s->iter];
 
 	switch (tag) {
+	case SITENAME_PAGE_PART:
+		APP_WRITE(config.appname, config.appnamelen);
+		break;
 	case TITLE_PAGE_PART:
 		APP_WRITE(b->title, b->titlelen);
 		break;
@@ -247,12 +226,10 @@ static inline void selector_show_tag_processing(reqargs a, struct layer_context 
 	case REPEATTWO_PAGE_PART:
 		if (s->position >= s->limit) break;
 
-		printf("%p %p %u", s, s->found, s->position);
-
-		bool get_record_result = get_record(b,
-											s->found[s->position],
-											l,
-											NULL);
+		memset(b, '\0', sizeof(struct blog_record));
+		b->stack = con->freebuffer;
+		b->stack_space = CONTEXTAPPBUFFERSIZE - (con->freebuffer - (char *) con);
+		bool get_record_result = get_record(b, s->found[s->position], l, NULL);
 		s->position++;
 		if (get_record_result == false) {
 			s->iter--;
@@ -266,7 +243,10 @@ static inline void selector_show_tag_processing(reqargs a, struct layer_context 
 	}
 }
 
-static void selector(reqargs a, unsigned limit, unsigned offset, unix_epoch from, unix_epoch to) {
+static void selector(reqargs a, unsigned limit, unsigned offset, unix_epoch from, unix_epoch to, struct blog_record *b) {
+	// above
+	// select records by criteria on a single page
+
 	struct appcontext *con = CONTEXT;
 	essb *e = &con->templates;
 	struct layer_context *l = &con->layer;
@@ -274,72 +254,32 @@ static void selector(reqargs a, unsigned limit, unsigned offset, unix_epoch from
 	struct select s = {.limit = limit,};
 	s.found = alloca(sizeof(unsigned long) * limit);
 	if (list_records(&limit, s.found, offset, from, to, l, NULL) == false) return notfound(a);
-	struct blog_record b = {
-		.title = config.title_page_name,
-		.titlelen = config.title_page_name_len,
-		.datasource = config.title_page_content,
-		.datasourcelen = config.title_page_content_len,
-		.stack = con->freebuffer,
-		.stack_space = CONTEXTAPPBUFFERSIZE - (con->freebuffer - (char *) con)
-	};
 
 	for (; s.iter < e->records_amount; s.iter++) {
-		if (e->record_size[s.iter] < 0) selector_show_tag_processing(a, l, e, &b, &s);
+		if (e->record_size[s.iter] < 0) selector_show_tag_processing(a, b, &s);
 		else APP_WRITE(&e->records[e->record_seek[s.iter]], e->record_size[s.iter]);
 	}
 }
 
 static void title(reqargs a) {
-	struct appcontext *con = CONTEXT;
-	essb *e = &con->templates;
-	struct layer_context *l = &con->layer;
+	// show tittle page with pre-record values
 
-	unsigned amount = HOW_MANY_RECORDS_U_WANT_TO_SEE_ON_TITLEPAGE;
-	unsigned long found[HOW_MANY_RECORDS_U_WANT_TO_SEE_ON_TITLEPAGE];
-	if (list_records(&amount, found, 0, (unix_epoch) 0l, (unix_epoch) 2147483647l, l, NULL) == false) return notfound(a);
-
-	const char *out[PAGES_MAX] = {
-		[TITLE_PAGE_PART]    = config.title_page_name,
-		[CONTENT_PAGE_PART]  = config.title_page_content,
+	struct blog_record b = {
+		.title = config.title_page_name,
+		.titlelen = config.title_page_name_len,
+		.datasource = config.title_page_content,
+		.datasourcelen = config.title_page_content_len,
 	};
-	size_t outsizes[PAGES_MAX] = {
-		[TITLE_PAGE_PART]    = config.title_page_name_len,
-		[CONTENT_PAGE_PART]  = config.title_page_content_len,
-	};
-
-	unsigned ii = 0;
-	for (unsigned i = 0; i < e->records_amount; i++) {
-		if (e->record_size[i] >= 0) {
-			APP_WRITE(&e->records[e->record_seek[i]], e->record_size[i]);
-			continue;
-		}
-
-		APP_WRITE(out[-e->record_size[i]], outsizes[-e->record_size[i]]);
-		if (-e->record_size[i] == REPEATTWO_PAGE_PART and ii < amount) {
-			outsizes[TITLE_PAGE_PART] = 0; outsizes[CONTENT_PAGE_PART] = 0;
-			rewind_back(e, REPEATONE_PAGE_PART, &i);
-			struct blog_record b = {
-				.stack = con->freebuffer,
-				.stack_space = CONTEXTAPPBUFFERSIZE - (con->freebuffer - (char *) con)
-			};
-
-			if (get_record(&b, found[ii], l, NULL) == true) {
-				char *f = util_memmem(b.datasource, b.datasourcelen, "<!-- break -->", strizeof("<!-- break -->"));
-				if (f) b.datasourcelen -= b.datasourcelen - (f - b.datasource);
-				out[TITLE_PAGE_PART] = b.title;
-				out[CONTENT_PAGE_PART] = b.datasource;
-				outsizes[TITLE_PAGE_PART] = b.titlelen;
-				outsizes[CONTENT_PAGE_PART] = b.datasourcelen;
-			}
-			ii++;
-		}
-	}
+	selector(a, 4, 0, (unix_epoch) 0l, (unix_epoch) 2147483647l, &b);
 }
 
 static inline void record_show_tag_processing(reqargs a, int32_t tag, struct blog_record b) {
 	tag = -tag;
 
 	switch (tag) {
+		case SITENAME_PAGE_PART:
+			APP_WRITE(config.appname, config.appnamelen);
+			break;
 		case TITLE_PAGE_PART:
 			APP_WRITE(b.title, b.titlelen);
 			break;
@@ -375,6 +315,7 @@ static void show_record(reqargs a, uint32_t record) {
 void app_request(reqargs a) {
 	if (METHOD != GET or REQUEST_LEN == 0 or REQUEST[0] != '/') return notfound(a);
 	if (REQUEST_LEN == 1 and REQUEST[0] == '/') return title(a);
-	if (REQUEST_LEN == 2 and REQUEST[0] == '/' and REQUEST[1] == 'q') return selector(a, 4, 0, (unix_epoch) 0l, (unix_epoch) 2147483647l);
 	return show_record(a, get_u32_from_end_of_string(REQUEST, REQUEST_LEN));
 }
+
+#endif // GUARD_APP_C
