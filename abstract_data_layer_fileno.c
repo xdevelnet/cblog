@@ -9,6 +9,8 @@
 #include <stdio.h>
 #include <sys/mman.h>
 
+#define DEFAULT_FILE_MODE (S_IREAD | S_IWRITE | S_IRGRP | S_IROTH)
+
 const char fileno_data_dir[] = "data";
 const char fileno_datasource_dir[] = "html";
 const char fileno_tag_dir[] = "tags";
@@ -24,7 +26,7 @@ const char fileno_last_record_file[] = "last_record";
  *                third_file
  *                fourth_file
  *                fifth_file
- *           html/
+ *           datasource/
  *                first_file.html
  *                second_file.html
  *                third_file.html
@@ -36,6 +38,9 @@ const char fileno_last_record_file[] = "last_record";
  *                photos/
  *                       2
  *                       3
+ *           sessions/
+ *                userkeydasdsa
+ *                userkeyabcdef
  *           1
  *           2
  *           3
@@ -164,7 +169,7 @@ static int filter(const struct dirent *d) {
 	static const int keep = 1;
 	static const int away = 0;
 
-	if (d->d_type != DT_REG) return away;
+//	if (d->d_type != DT_REG) return away;
 	if (is_str_unsignedint(d->d_name) == false) return away;
 	struct stat s;
 	fstatat(glob_dirfd, d->d_name, &s, 0);
@@ -206,7 +211,7 @@ bool list_records_fileno(unsigned *amount,// Pointer that could be used for limi
 	return true;
 }
 
-static inline void *map_whole_file(int fd, size_t *size, const char **error) {
+static inline void *map_whole_file(int fd, size_t *size, int flag, const char **error) {
 	// above
 	// Map whole file from fd
 
@@ -216,29 +221,17 @@ static inline void *map_whole_file(int fd, size_t *size, const char **error) {
 	if (st.st_size <= 0) OUCH_ERROR(data_layer_error_metadata_corrupted, return NULL);
 	*size = (size_t) st.st_size;
 
-	void *retval = mmap(NULL, *size, PROT_READ, MAP_SHARED, fd, 0);
+	void *retval = mmap(NULL, *size, PROT_READ | ((flag == MAP_PRIVATE) ? PROT_WRITE : 0), flag, fd, 0);
 	if (retval == MAP_FAILED) OUCH_ERROR(strerror(errno), return NULL);
 	return retval;
 }
 
-const char meta_display_source [] = "source";
-const char meta_display_data   [] = "data";
-const char meta_display_both   [] = "both";
-
-static const char *display_enum_to_str(enum record_display d) {
-	if (d == DISPLAY_SOURCE) return meta_display_source;
-	if (d == DISPLAY_DATA) return meta_display_data;
-	if (d == DISPLAY_BOTH) return meta_display_both;
-	return NULL;
+void *map_whole_file_shared(int fd, size_t *size, const char **error) {
+	return map_whole_file(fd, size, MAP_SHARED, error);
 }
 
-static enum record_display parse_meta_display(char *ptr, size_t len) {
-	if (len == 0) return DISPLAY_INVALID;
-
-	if (memcmp(ptr, meta_display_source, len) == 0) return DISPLAY_SOURCE;
-	if (memcmp(ptr, meta_display_data,   len) == 0) return DISPLAY_DATA;
-	if (memcmp(ptr, meta_display_both,   len) == 0) return DISPLAY_BOTH;
-	return DISPLAY_INVALID;
+void *map_whole_file_private(int fd, size_t *size, const char **error) {
+	return map_whole_file(fd, size, MAP_PRIVATE, error);
 }
 
 static size_t taglen(const char *str) {
@@ -303,7 +296,7 @@ bool parse_metadata(int fd, struct blog_record *r, const char **error) {
 	if (fstat(fd, &s) < 0) OUCH_ERROR(strerror(errno), return false);
 	if (s.st_size < (ssize_t) strizeof(METADATA_FMT_WO_TAGS))  OUCH_ERROR(data_layer_error_metadata_corrupted, return false;);
 
-	const char meta_header[] = "METADATA1";
+	const char meta_header[] = METADATA_VER;
 	const char meta_display[] = "\ndisplay: ";
 	const char meta_title[] = "\ntitle: ";
 	const char meta_data[] = "\ndata: ";
@@ -312,7 +305,7 @@ bool parse_metadata(int fd, struct blog_record *r, const char **error) {
 	const char meta_creation_unixepoch[] = "\ncreation_unixepoch: ";
 
 	size_t metalen;
-	char *meta = map_whole_file(fd, &(metalen), error);
+	char *meta = map_whole_file_shared(fd, &(metalen), error);
 	if (meta == NULL) return false;
 
 	if (meta[metalen - 1] != '\n' or memcmp(meta, meta_header, strizeof(meta_header)) != 0) {
@@ -496,7 +489,7 @@ static void add_to_tag(const char *tag, struct fileno_context *f, struct blog_re
 	mkdirat(f->tagsfd, tag, 0700);
 	int dir = openat(f->tagsfd, tag, O_DIRECTORY | O_RDONLY);
 	sprintf(r->stack, "%lu", r->choosen_record);
-	int fd = openat(dir, r->stack, O_CREAT | O_RDWR, 0644);
+	int fd = openat(dir, r->stack, O_CREAT | O_RDWR, DEFAULT_FILE_MODE);
 	close(fd);
 	close(dir);
 }
@@ -518,14 +511,14 @@ static bool flush_files(int meta, struct fileno_context *f, struct blog_record *
 
 	if (r->datalen > 0) while(1) {
 		randfilename(name, len);
-		fd = openat(f->datafd, name, O_RDWR | O_CREAT | O_EXCL, 0644);
+		fd = openat(f->datafd, name, O_RDWR | O_CREAT | O_EXCL, DEFAULT_FILE_MODE);
 		if (fd >= 0) break;
 		if (errno != EEXIST) OUCH_ERROR(strerror(errno), return false);
 	}
 
 	if (r->datasourcelen > 0 or r->display == DISPLAY_BOTH or r->display == DISPLAY_SOURCE) while(1) {
 		randfilename(name2, len);
-		sfd = openat(f->datasourcefd, name2, O_RDWR | O_CREAT | O_EXCL, 0644);
+		sfd = openat(f->datasourcefd, name2, O_RDWR | O_CREAT | O_EXCL, DEFAULT_FILE_MODE);
 		if (fd >= 0) break;
 		if (errno != EEXIST) {
 			close(fd);
@@ -606,14 +599,14 @@ bool insert_record_fileno(struct blog_record *r, void *context, const char **err
 	if (utf8_check(r->title) != NULL) OUCH_ERROR(data_layer_error_invalid_argument_utf8, return false);
 	if (r->datalen == 0 and r->datasourcelen == 0) OUCH_ERROR(data_layer_error_invalid_argument, return false);
 
-	int last_record_storage_fd = openat(f->dfd, fileno_last_record_file, O_RDWR | O_CREAT, 0640);
+	int last_record_storage_fd = openat(f->dfd, fileno_last_record_file, O_RDWR | O_CREAT, DEFAULT_FILE_MODE);
 	char last_record_str[CBL_UINT32_STR_MAX];
 	if (last_prepare(last_record_storage_fd, last_record_str, &(r->choosen_record), error) == false) {
 		close(last_record_storage_fd);
 		return false;
 	}
 
-	int metadata = openat(f->dfd, last_record_str, O_RDWR | O_CREAT | O_EXCL, 0640);
+	int metadata = openat(f->dfd, last_record_str, O_RDWR | O_CREAT | O_EXCL, DEFAULT_FILE_MODE);
 	if (metadata < 0) {
 		if (errno == EEXIST) OUCH_ERROR(data_layer_error_record_already_exist, close(last_record_storage_fd); return false);
 		OUCH_ERROR(strerror(errno), close(last_record_storage_fd); return false);
@@ -640,7 +633,7 @@ bool key_val_fileno(const char *key, void *value, ssize_t *size, void *context, 
 
 	if (*size == 0 and faccessat(f->keyvalfd, key, R_OK | W_OK, 0) == 0) return true;
 	if (*size > 0) {
-		int fd = openat(f->keyvalfd, key, O_CREAT | O_RDWR | O_EXCL, 0644);
+		int fd = openat(f->keyvalfd, key, O_CREAT | O_RDWR | O_EXCL, DEFAULT_FILE_MODE);
 		if (fd < 0) OUCH_ERROR(strerror(errno), return false);
 		ssize_t got = write(fd, value, (size_t) size);
 		close(fd);
@@ -653,7 +646,7 @@ bool key_val_fileno(const char *key, void *value, ssize_t *size, void *context, 
 	}
 
 	if (*size < 0) {
-		int fd = openat(f->keyvalfd, key, O_CREAT | O_RDWR | O_EXCL, 0644);
+		int fd = openat(f->keyvalfd, key, O_CREAT | O_RDWR | O_EXCL, DEFAULT_FILE_MODE);
 		if (fd < 0) OUCH_ERROR(strerror(errno), return false);
 		ssize_t got = read(fd, value, (size_t) -*size);
 		close(fd);
