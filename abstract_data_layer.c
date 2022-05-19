@@ -41,7 +41,8 @@ struct layer_context {
 	uint32_t f;
 	uint32_t g;
 	uint32_t h;
-}; // 36 byte context is probably enough for any engine needs
+	uint32_t i;
+}; // 40 byte context is probably enough for any engine needs
 
 const char data_layer_error_init[] = "Data layer haven't been initialized";
 const char data_layer_error_havent_implemented[] = "Selected data layer engine still not implemented";
@@ -52,6 +53,26 @@ const char data_layer_error_invalid_argument[] = "Invalid argument.";
 const char data_layer_error_invalid_argument_utf8[] = "One of the arguments contains invalid utf-8 string";
 const char data_layer_error_record_already_exist[] = "You are attempting to insert a record that's already exist";
 const char data_layer_error_unable_to_process_kval[] = "Operation with choosen key-value pair wasn't successful";
+
+const char meta_display_source [] = "source";
+const char meta_display_data   [] = "data";
+const char meta_display_both   [] = "both";
+
+const char *display_enum_to_str(enum record_display d) {
+	if (d == DISPLAY_SOURCE) return meta_display_source;
+	if (d == DISPLAY_DATA) return meta_display_data;
+	if (d == DISPLAY_BOTH) return meta_display_both;
+	return NULL;
+}
+
+enum record_display parse_meta_display(char *ptr, size_t len) {
+	if (len == 0) return DISPLAY_INVALID;
+
+	if (memcmp(ptr, meta_display_source, len) == 0) return DISPLAY_SOURCE;
+	if (memcmp(ptr, meta_display_data,   len) == 0) return DISPLAY_DATA;
+	if (memcmp(ptr, meta_display_both,   len) == 0) return DISPLAY_BOTH;
+	return DISPLAY_INVALID;
+}
 
 bool list_records_dummy(unsigned *amount, unsigned long *result_list, unsigned offset, unix_epoch from, unix_epoch to, void *context, const char **error) {
 	*error = data_layer_error_init;
@@ -105,6 +126,7 @@ bool (*key_val)(const char *, void *, ssize_t *, void *, const char **) = key_va
 #endif
 
 enum datalayer_engines {
+	ENGINE_NULL,
 #ifdef DATA_LAYER_MYSQL
 	ENGINE_MYSQL,
 #endif
@@ -112,6 +134,27 @@ enum datalayer_engines {
 	ENGINE_FILENO,
 #endif
 };
+
+const char *layer_engine_to_str(enum datalayer_engines e) {
+#ifdef DATA_LAYER_MYSQL
+	if (e == ENGINE_MYSQL) return "ENGINE_MYSQL";
+#endif
+#ifdef DATA_LAYER_FILENO
+	if (e == ENGINE_FILENO) return "ENGINE_FILENO";
+#endif
+	return NULL;
+}
+
+enum datalayer_engines str_to_layer_engine(const char *str) {
+	if (str == NULL) return ENGINE_NULL;
+#ifdef DATA_LAYER_MYSQL
+	if (strcmp(str, "ENGINE_MYSQL") == 0) return ENGINE_MYSQL;
+#endif
+#ifdef DATA_LAYER_FILENO
+	if (strcmp(str, "ENGINE_FILENO") == 0) return ENGINE_FILENO;
+#endif
+	return ENGINE_NULL;
+}
 
 bool initialize_engine(enum datalayer_engines e, const void *addr, void *context, const char **error) {
 	switch (e) {
