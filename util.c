@@ -8,13 +8,9 @@
 #define strizeof(a) (sizeof(a)-1)
 #endif
 
-#if !defined STRINGIZE
-#define STRINGIZE(a) #a
-#endif
+#define CBL_STRINGIZE(a) #a
 
-#if !defined MAX
-#define MAX(a,b) (((a)>(b))?(a):(b))
-#endif
+#define CBL_MAX(a,b) (((a)>(b))?(a):(b))
 
 #if !defined UNUSED
 #define UNUSED(x) (void)(x)

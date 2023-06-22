@@ -164,7 +164,7 @@ uint32_t get_u32_from_end_of_string(const char *string, size_t len) {
 
 	if (em_isdigit(*locate) == false) return UINT32_MAX;
 
-	char buffer[strizeof(STRINGIZE(UINT32_MAX))];
+	char buffer[strizeof(CBL_STRINGIZE(UINT32_MAX))];
 	long digitslen = string + len - locate;
 	memcpy(buffer, locate, digitslen);
 	buffer[digitslen] = '\0';

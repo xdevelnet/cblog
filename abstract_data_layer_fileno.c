@@ -100,7 +100,7 @@ static bool initialize_fileno_context(const void *addr, void *context, const cha
 	if (path == NULL) OUCH_ERROR("Request address for engine has not found", return false);
 	size_t realpathlen = strlen(path);
 	free(path);
-	size_t maxlen = MAX(strizeof(fileno_data_dir), MAX(strizeof(fileno_tag_dir), strizeof(fileno_datasource_dir)));
+	size_t maxlen = CBL_MAX(strizeof(fileno_data_dir), CBL_MAX(strizeof(fileno_tag_dir), strizeof(fileno_datasource_dir)));
 
 	if (realpathlen + sizeof('/') + maxlen > PATH_MAX) {
 		OUCH_ERROR("You managed to put storage files so deep, that resulting path length may reach 4096 bytes! OMG!", return false);
