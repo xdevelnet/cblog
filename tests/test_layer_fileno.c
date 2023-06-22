@@ -8,8 +8,8 @@
 #include <ftw.h>
 
 #define DATA_LAYER_FILENO
-#include "../util.c"
-#include "../abstract_data_layer.c"
+#include "../src/util.c"
+#include "../src/abstract_data_layer.c"
 
 static int unlink_cb(const char *fpath, const struct stat *sb, int typeflag, struct FTW *ftwbuf) {
 	int rv = remove(fpath);

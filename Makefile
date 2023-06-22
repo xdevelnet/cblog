@@ -6,14 +6,14 @@ all:
 	@echo make mon
 	@echo make demo
 fcgi:
-	cc --std=c99 fcgi_version.c -I ../ssb/src/ -O0 -g -o cblog_fcgi -Wall -Wextra -Wno-unused-result -Wno-misleading-indentation -Wno-unused-parameter -lpthread -lfcgi
-	cc --std=c99 fcgi_version.c -I ../ssb/src/ -O3 -o cblog_fcgi_O3 -Wall -Wextra -Wno-unused-result -Wno-misleading-indentation -Wno-unused-parameter -lpthread -lfcgi
-	strip cblog_fcgi_O3
+	cc --std=c99 src/fcgi_version.c -I ../ssb/src/ -O0 -g -o build/cblog_fcgi_debug -Wall -Wextra -Wno-unused-result -Wno-misleading-indentation -Wno-unused-parameter -lpthread -lfcgi
+	cc --std=c99 src/fcgi_version.c -I ../ssb/src/ -O3 -o build/cblog_fcgi -Wall -Wextra -Wno-unused-result -Wno-misleading-indentation -Wno-unused-parameter -lpthread -lfcgi
+	strip build/cblog_fcgi
 mon:
-	cc ../mongoose/mongoose.c mon_version.c -I ../mongoose/ -I ../ssb/src/ -Wall -Wextra -O0 -g -o cblog_mon -Wno-unused-result -Wno-misleading-indentation -Wno-unused-parameter
-	cc ../mongoose/mongoose.c mon_version.c -I ../mongoose/ -I ../ssb/src/ -Wall -Wextra -O3 -o cblog_mon_O3 -Wno-unused-result -Wno-misleading-indentation -Wno-unused-parameter
-	strip cblog_mon_O3
+	cc ../mongoose/mongoose.c src/mon_version.c -I ../mongoose/ -I ../ssb/src/ -Wall -Wextra -O0 -g -o build/cblog_mon_debug -Wno-unused-result -Wno-misleading-indentation -Wno-unused-parameter
+	cc ../mongoose/mongoose.c src/mon_version.c -I ../mongoose/ -I ../ssb/src/ -Wall -Wextra -O3 -o build/cblog_mon -Wno-unused-result -Wno-misleading-indentation -Wno-unused-parameter
+	strip build/cblog_mon
 demo:
-	cc --std=c99 demo.c -O3 -o demo -Wall -Wextra -Wno-unused-result -Wno-misleading-indentation -Wno-unused-parameter -lpthread
+	cc --std=c99 src/demo.c -O3 -o build/demo -Wall -Wextra -Wno-unused-result -Wno-misleading-indentation -Wno-unused-parameter -lpthread
 clean:
-	rm -f cblog_fcgi cblog_fcgi_O3 cblog_mon cblog_mon_O3 demo
+	rm -f build/*

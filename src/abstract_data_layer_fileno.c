@@ -479,10 +479,10 @@ static void normalize_filename(char *name) {
 	}
 }
 
-static void markdown_output_process(const char *data, unsigned size, void *context) {
-	int *fd = context;
-	write(*fd, data, size);
-}
+//static void markdown_output_process(const char *data, unsigned size, void *context) {
+//	int *fd = context;
+//	write(*fd, data, size);
+//}
 
 static void add_to_tag(const char *tag, struct fileno_context *f, struct blog_record *r) {
 	if (r->stack_space < NAME_MAX) return;
@@ -553,7 +553,7 @@ static bool flush_files(int meta, struct fileno_context *f, struct blog_record *
 		// Only markdown is provided, but displaying html is possible (html only or html+md)
 
 		write(fd, r->data, r->datalen);
-		md_html(r->data, r->datalen, markdown_output_process, &sfd, 0, 0);
+//		md_html(r->data, r->datalen, markdown_output_process, &sfd, 0, 0);
 		close(fd);
 		close(sfd);
 
