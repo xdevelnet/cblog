@@ -90,7 +90,7 @@ int main(int argc, char **argv) {
 
 	struct mg_mgr mgr;
 	mg_mgr_init(&mgr);
-	mg_log_set("1");
+	mg_log_set(MG_LL_INFO);
 	char contextbuffer[CONTEXTAPPBUFFERSIZE];
 	void *appcontext = contextbuffer;
 	if (app_prepare(&appcontext) == false) {
