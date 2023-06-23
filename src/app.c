@@ -204,6 +204,8 @@ struct select {
 	unsigned limit;
 	unsigned long *found;
 	unsigned position;
+	bool href;
+	bool end_at_vline;
 };
 
 static inline void selector_show_tag_processing(reqargs a, struct blog_record *b, struct select *s) {
@@ -218,7 +220,20 @@ static inline void selector_show_tag_processing(reqargs a, struct blog_record *b
 		APP_WRITE(config.appname, config.appnamelen);
 		break;
 	case TITLE_PAGE_PART:
+		if (s->href) {
+			APP_WRITE("<a href=\"", strizeof("<a href=\""));
+			APP_WRITE(b->title, b->titlelen);
+			APP_WRITE("-", strizeof("-"));
+			char buffer[CBL_UINT32_STR_MAX];
+			sprintf(buffer, "%lu", b->choosen_record);
+			APP_WRITE(buffer, strlen(buffer));
+			APP_WRITE("\">", strizeof("\">"));
+		}
 		APP_WRITE(b->title, b->titlelen);
+		if (s->href) {
+			APP_WRITE("</a>", strizeof("</a>"));
+			s->href = false;
+		}
 		break;
 	case CONTENT_PAGE_PART:
 		APP_WRITE(b->datasource, b->datasourcelen);
@@ -234,6 +249,18 @@ static inline void selector_show_tag_processing(reqargs a, struct blog_record *b
 		if (get_record_result == false) {
 			s->iter--;
 			break;
+		} else {
+			s->href = true;
+			const char *target = b->datasource;
+#define VLINE_HTMLTAG "<hr>"
+			char *found = util_memmem(target, b->datasourcelen, VLINE_HTMLTAG, strizeof(VLINE_HTMLTAG));
+			if (found) {
+				if (s->end_at_vline == true) {
+					b->datasourcelen -= b->datasourcelen - (found - target);
+				} else {
+					memset(found, ' ', strizeof(VLINE_HTMLTAG));
+				}
+			}
 		}
 
 		rewind_back(e, REPEATONE_PAGE_PART, &(s->iter));
@@ -243,7 +270,7 @@ static inline void selector_show_tag_processing(reqargs a, struct blog_record *b
 	}
 }
 
-static void selector(reqargs a, unsigned limit, unsigned offset, unix_epoch from, unix_epoch to, struct blog_record *b) {
+static void selector(reqargs a, unsigned limit, unsigned offset, unix_epoch from, unix_epoch to, struct blog_record *b, bool end_at_vline) {
 	// above
 	// select records by criteria on a single page
 
@@ -251,13 +278,19 @@ static void selector(reqargs a, unsigned limit, unsigned offset, unix_epoch from
 	essb *e = &con->templates;
 	struct layer_context *l = &con->layer;
 
-	struct select s = {.limit = limit,};
+	struct select s = {.limit = limit, .end_at_vline = true};
 	s.found = alloca(sizeof(unsigned long) * limit);
 	if (list_records(&limit, s.found, offset, from, to, l, NULL) == false) return notfound(a);
 
 	for (; s.iter < e->records_amount; s.iter++) {
-		if (e->record_size[s.iter] < 0) selector_show_tag_processing(a, b, &s);
-		else APP_WRITE(&e->records[e->record_seek[s.iter]], e->record_size[s.iter]);
+		if (e->record_size[s.iter] < 0) {
+			selector_show_tag_processing(a, b, &s);
+		} else {
+			char *target = &e->records[e->record_seek[s.iter]];
+			size_t size = e->record_size[s.iter];
+
+			APP_WRITE(target, size);
+		}
 	}
 }
 
@@ -270,7 +303,7 @@ static void title(reqargs a) {
 		.datasource = config.title_page_content,
 		.datasourcelen = config.title_page_content_len,
 	};
-	selector(a, 4, 0, (unix_epoch) 0l, (unix_epoch) 2147483647l, &b);
+	selector(a, 4, 0, (unix_epoch) 0l, (unix_epoch) 2147483647l, &b, true);
 }
 
 static inline void record_show_tag_processing(reqargs a, int32_t tag, struct blog_record b) {
@@ -284,7 +317,15 @@ static inline void record_show_tag_processing(reqargs a, int32_t tag, struct blo
 			APP_WRITE(b.title, b.titlelen);
 			break;
 		case CONTENT_PAGE_PART:
+		{
+			const char *target = b.datasource;
+			size_t size = b.datasourcelen;
+			char *found = util_memmem(target, size, VLINE_HTMLTAG, strizeof(VLINE_HTMLTAG));
+			if (found) {
+				memset(found, ' ', strizeof(VLINE_HTMLTAG));
+			}
 			APP_WRITE(b.datasource, b.datasourcelen);
+		}
 			break;
 		default:
 			return;

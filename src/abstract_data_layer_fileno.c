@@ -443,6 +443,8 @@ static bool get_record_fileno(struct blog_record *r, unsigned choosen_record, vo
 
 	if (fd[0] < 0 and fd[1] < 0) return false;
 
+	r->choosen_record = choosen_record;
+
 	return true;
 }
 
