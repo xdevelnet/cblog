@@ -2,9 +2,9 @@
 #include <time.h>
 #include <stdbool.h>
 
-//#include "../../md4c/src/md4c.c"
-//#include "../../md4c/src/md4c-html.c"
-//#include "../../md4c/src/entity.c"
+#include "../../md4c/src/md4c.c"
+#include "../../md4c/src/md4c-html.c"
+#include "../../md4c/src/entity.c"
 
 typedef union {
 	time_t t;
@@ -114,8 +114,8 @@ bool (*insert_record)(struct blog_record *, void *, const char **) = insert_reco
 // insert a blog_record
 bool (*key_val)(const char *, void *, ssize_t *, void *, const char **) = key_val_dummy;
 // simple key-value storage. if size equals zero - we're checking if pair exists.
-// If size is greater then zero, we're attempting to insert a new record
-// If size is less then zero, we're attempting to retrieve a record
+// If size is greater than zero, we're attempting to insert a new record
+// If size is less than zero, we're attempting to retrieve a record
 
 #ifdef DATA_LAYER_MYSQL
 #include "abstract_data_layer_mysql.c"

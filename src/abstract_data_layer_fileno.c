@@ -479,10 +479,10 @@ static void normalize_filename(char *name) {
 	}
 }
 
-//static void markdown_output_process(const char *data, unsigned size, void *context) {
-//	int *fd = context;
-//	write(*fd, data, size);
-//}
+static void markdown_output_process(const char *data, unsigned size, void *context) {
+	int *fd = context;
+	write(*fd, data, size);
+}
 
 static void add_to_tag(const char *tag, struct fileno_context *f, struct blog_record *r) {
 	if (r->stack_space < NAME_MAX) return;
@@ -553,7 +553,7 @@ static bool flush_files(int meta, struct fileno_context *f, struct blog_record *
 		// Only markdown is provided, but displaying html is possible (html only or html+md)
 
 		write(fd, r->data, r->datalen);
-//		md_html(r->data, r->datalen, markdown_output_process, &sfd, 0, 0);
+		md_html(r->data, r->datalen, markdown_output_process, &sfd, 0, 0);
 		close(fd);
 		close(sfd);
 
@@ -631,7 +631,11 @@ bool insert_record_fileno(struct blog_record *r, void *context, const char **err
 bool key_val_fileno(const char *key, void *value, ssize_t *size, void *context, const char **error) {
 	struct fileno_context *f = context;
 
-	if (*size == 0 and faccessat(f->keyvalfd, key, R_OK | W_OK, 0) == 0) return true;
+	if (*size == 0) {
+		if (faccessat(f->keyvalfd, key, R_OK | W_OK, 0) == 0) return true;
+		return false;
+	}
+
 	if (*size > 0) {
 		int fd = openat(f->keyvalfd, key, O_CREAT | O_RDWR | O_EXCL, DEFAULT_FILE_MODE);
 		if (fd < 0) OUCH_ERROR(strerror(errno), return false);
@@ -645,14 +649,12 @@ bool key_val_fileno(const char *key, void *value, ssize_t *size, void *context, 
 		return true;
 	}
 
-	if (*size < 0) {
-		int fd = openat(f->keyvalfd, key, O_CREAT | O_RDWR | O_EXCL, DEFAULT_FILE_MODE);
-		if (fd < 0) OUCH_ERROR(strerror(errno), return false);
-		ssize_t got = read(fd, value, (size_t) -*size);
-		close(fd);
-		if (got < 0) OUCH_ERROR(strerror(errno), return false);
-		*size = got;
-	}
+	int fd = openat(f->keyvalfd, key, O_CREAT | O_RDWR | O_EXCL, DEFAULT_FILE_MODE);
+	if (fd < 0) OUCH_ERROR(strerror(errno), return false);
+	ssize_t got = read(fd, value, (size_t) -*size);
+	close(fd);
+	if (got < 0) OUCH_ERROR(strerror(errno), return false);
+	*size = got;
 
 	return true;
 }

@@ -16,4 +16,4 @@ mon:
 demo:
 	cc --std=c99 src/demo.c -O3 -o build/demo -Wall -Wextra -Wno-unused-result -Wno-misleading-indentation -Wno-unused-parameter -lpthread
 clean:
-	rm -f build/*
+	rm -f build/demo build/cblog_mon build/cblog_mon_debug build/cblog_fcgi build/cblog_fcgi_debug

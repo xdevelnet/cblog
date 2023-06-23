@@ -33,7 +33,8 @@ Pros are marked with green color, cons - red. Points that can't be categorized b
 First of all you need to download dependencies.
 
 ```bash
-git clone http://github.com/xdevelnet/ssb.git
+git clone https://github.com/xdevelnet/ssb.git
+git clone https://github.com/xdevelnet/md4c
 ```
 If you want to make project run via fastcgi, you would need nginx and fastcgi:
 ```bash
