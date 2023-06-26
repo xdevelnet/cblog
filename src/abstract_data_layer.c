@@ -44,6 +44,12 @@ struct layer_context {
 	uint32_t i;
 }; // 40 byte context is probably enough for any engine needs
 
+struct list_filter {
+	unix_epoch from; // unixtime
+	unix_epoch to;
+	char **tags;
+};
+
 const char data_layer_error_init[] = "Data layer haven't been initialized";
 const char data_layer_error_havent_implemented[] = "Selected data layer engine still not implemented";
 const char data_layer_error_wrong_engine[] = "Wrong engine selected";
@@ -74,7 +80,7 @@ enum record_display parse_meta_display(char *ptr, size_t len) {
 	return DISPLAY_INVALID;
 }
 
-bool list_records_dummy(unsigned *amount, unsigned long *result_list, unsigned offset, unix_epoch from, unix_epoch to, void *context, const char **error) {
+bool list_records_dummy(unsigned *amount, unsigned long *result_list, unsigned offset, struct list_filter filter, void *context, const char **error) {
 	*error = data_layer_error_init;
 	return false;
 }
@@ -106,7 +112,7 @@ bool key_val_dummy(const char *key, void *value, ssize_t *size, void *context, c
 	return false;
 }
 
-bool (*list_records)(unsigned *, unsigned long *, unsigned, unix_epoch, unix_epoch, void *, const char **) = list_records_dummy;
+bool (*list_records)(unsigned *, unsigned long *, unsigned, struct list_filter, void *, const char **) = list_records_dummy;
 // attempt to fill a limited-size array integers which corresponds record's id
 bool (*get_record)(struct blog_record *, unsigned , void *, const char **) = get_record_dummy;
 // retrieve blog_record itself into empty structure. Non-empty structures are prohibited because of stack usage

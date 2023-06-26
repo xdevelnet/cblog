@@ -121,12 +121,22 @@ void *worker(void *arg) {
 		if (FCGX_Accept_r(&request) == -1) break;
 		app_write = write_fun_stub;
 		set_http_status_and_hdr = set_http_status_and_hdr_fun;
-		const char *req = FCGX_GetParam("REQUEST_URI", request.envp);
+//		char **ptr = request.envp;
+//		while(*ptr != NULL) {
+//			puts(*ptr);
+//			ptr++;
+//		}
+
+		const char *req = FCGX_GetParam("DOCUMENT_URI", request.envp);
 		const char *method = FCGX_GetParam("REQUEST_METHOD", request.envp);
+		const char *query = FCGX_GetParam("QUERY_STRING", request.envp);
+
 		reqargs a = {.servercontext1 = &request,
 					 .servercontext2 = &request,
 					 .request = req,
 					 .request_len = strlen(req),
+					 .query = query,
+					 .query_len = query != NULL ? strlen(query) : 0,
 					 .appcontext = workerbuffer,
 					 .method = http_determine_method(method, strlen(method))
 		};

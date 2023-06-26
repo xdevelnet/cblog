@@ -67,6 +67,8 @@ static void cb(struct mg_connection *c, int ev, void *ev_data, void *fn_data) {
 				 .servercontext2 = hm,
 				 .request = hm->uri.ptr,
 				 .request_len = hm->uri.len,
+				 .query = hm->query.ptr,
+				 .query_len = hm->query.len,
 				 .appcontext = fn_data,
 				 .method = http_determine_method(hm->method.ptr, hm->method.len)
 	};

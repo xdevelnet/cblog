@@ -184,4 +184,34 @@ static bool is_str_unsignedint(const char *p) {
 	return true;
 }
 
+char *post_query_finder(const char *looking_for, const char *source, size_t source_len, size_t *result_len) {
+	// Ok, let's be honest here.
+	// this is not even fine implementation of such function
+	// it's just suits enough for this project and I don't want to
+	// spend a lot of time on it now. If someone wants to improve it
+	// then I'll accept their pull request.
+	// Current goal is to make it maintainable, or we could say "simple"
+
+	size_t looking_len = strlen(looking_for);
+	if (looking_len > source_len + strizeof("=a")) return NULL;
+	char lf[looking_len + 1];
+	memcpy(lf, looking_for, looking_len);
+	lf[looking_len] = '=';
+
+	char *find = util_memmem(source, source_len, lf, sizeof(lf));
+	if (find == NULL) {
+		return NULL;
+	}
+
+	char *seek = find + sizeof(lf);
+	char *amp = strchr(seek, '&');
+	if (amp == NULL) {
+		*result_len = source + source_len - seek;
+	} else {
+		*result_len = amp - seek;
+	}
+
+	return find + sizeof(lf);
+}
+
 #endif // GUARD_UTIL_C

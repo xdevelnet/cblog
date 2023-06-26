@@ -16,5 +16,7 @@ const char default_title_content[] = ""
 	"Here you may find some notes and records that I am write from time to time.<br>"
 	"Recent posts:";
 size_t default_title_content_len = strizeof(default_title_content);
+const char default_show_tags_content[] = "Displaying blog by tag";
+size_t default_show_tag_content_len = strizeof(default_show_tags_content);
 
 #endif //CBLOG_DEFAULT_RODATA_H

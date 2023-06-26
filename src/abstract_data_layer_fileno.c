@@ -165,7 +165,7 @@ static void scanfree(struct dirent **e, int amount) {
 }
 
 // This filter is NOT REENTRANT! Use scandir() with mutextes to make it thread-safe
-static int filter(const struct dirent *d) {
+static int filter_fun(const struct dirent *d) {
 	static const int keep = 1;
 	static const int away = 0;
 
@@ -182,18 +182,33 @@ static int filter(const struct dirent *d) {
 bool list_records_fileno(unsigned *amount,// Pointer that could be used for limiting amount of results in list. After executing places amount of results.
 						unsigned long *result_list, // Array that will be filled with results
 						unsigned offset,            // Skip some amount rows/records/results
-						unix_epoch from,               // Select only records that were created from specified unixtime
-						unix_epoch to,                 // Same as above, but until specified unixtime
+						struct list_filter filter,  // filter selection
 						void *context,
-						 const char **error) {
+						const char **error) {
 	struct fileno_context *f = context;
 	struct dirent **e;
 
+	int scanfd = f->dfd;
+	const char *scanaddr = f->addr;
+
+	char path[PATH_MAX];
+	do {
+		if (filter.tags == NULL or filter.tags[0] == NULL) break; puts("AAAAA!"); puts(filter.tags[0]);
+		int dfd = openat(f->tagsfd, filter.tags[0], O_DIRECTORY | O_RDONLY); // that's the main limitation of fileno engine - we only support filtering by one tag
+		if (dfd < 0) { puts("AAAAA2!"); perror(NULL);
+			*amount = 0;
+			break;
+		}
+		snprintf(path, PATH_MAX, "%s/tags/%s", scanaddr, filter.tags[0]); puts(path);
+		scanfd = dfd;
+		scanaddr = path;
+	} while(0);
+
 	pthread_mutex_lock(&scanmutex);
-	glob_from = from;
-	glob_to = to;
-	glob_dirfd = f->dfd;
-	int ret = scandir(f->addr, &e, filter, comparator);
+	glob_from = filter.from;
+	glob_to = filter.to;
+	glob_dirfd = scanfd;
+	int ret = scandir(scanaddr, &e, filter_fun, comparator);
 	pthread_mutex_unlock(&scanmutex);
 
 	unsigned limit = *amount; // 8 lines below could be refactored... Or now. IDK.
@@ -252,14 +267,19 @@ static size_t taglen(const char *str) {
 
 static char *tag_processing(char *comma_separated_tags, struct blog_record *r) {
 	size_t tags_amount = char_occurences(comma_separated_tags, ',') + 1;
-	char *put = (char *) r->stack + sizeof(void *) * (tags_amount + 1);
+	size_t stack_ptrs_space = sizeof(void *) * (tags_amount + 1);
+	char *put = (char *) r->stack + stack_ptrs_space;
 	r->tags = r->stack;
+	r->stack += stack_ptrs_space;
+	r->stack_space -= stack_ptrs_space;
 	r->tags[tags_amount] = NULL;
 	for (size_t i = 0; i < tags_amount; i++) {
 		comma_separated_tags = skip_spaces(comma_separated_tags);
 		size_t l = taglen(comma_separated_tags);
 		r->tags[i] = memcpy(put, comma_separated_tags, l);
 		r->tags[i][l] = '\0';
+		r->stack += l + 1;
+		r->stack_space -= l + 1;
 		put += l + 1;
 		comma_separated_tags += l;
 		comma_separated_tags = skip_spaces(comma_separated_tags);
@@ -490,9 +510,10 @@ static void add_to_tag(const char *tag, struct fileno_context *f, struct blog_re
 	if (r->stack_space < NAME_MAX) return;
 	mkdirat(f->tagsfd, tag, 0700);
 	int dir = openat(f->tagsfd, tag, O_DIRECTORY | O_RDONLY);
+	// the main reason why I'm not checking return values is not because I don't care
+	// but because any subsequent call will easily fail
 	sprintf(r->stack, "%lu", r->choosen_record);
-	int fd = openat(dir, r->stack, O_CREAT | O_RDWR, DEFAULT_FILE_MODE);
-	close(fd);
+	linkat(f->dfd, r->stack, dir, r->stack, 0);
 	close(dir);
 }
 

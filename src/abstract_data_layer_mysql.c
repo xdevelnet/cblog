@@ -2,7 +2,7 @@ bool initialize_mysql_context(const void *addr, void *context, const char **erro
 	return NULL;
 }
 
-bool list_records_mysql(unsigned *amount, unsigned long *result_list, unsigned offset, unix_epoch from, unix_epoch to, void *context, const char **error) {
+bool list_records_mysql(unsigned *amount, unsigned long *result_list, unsigned offset, struct list_filter filter, void *context, const char **error) {
 	*error = data_layer_error_havent_implemented;
 	return false;
 }

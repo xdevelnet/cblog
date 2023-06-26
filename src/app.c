@@ -35,6 +35,8 @@ typedef enum {POST, GET, PUT, PATCH, DELETE, UNKNOWN} http_methods;
 typedef struct reqargs {
 	const char *request;
 	size_t request_len;
+	const char *query;
+	size_t query_len;
 	http_methods method;
 	void *appcontext; // struct appcontext
 	void *servercontext1;
@@ -47,6 +49,8 @@ void (*app_write) (const void *, unsigned long, void *);
 
 #define REQUEST a.request
 #define REQUEST_LEN a.request_len
+#define QUERY a.query
+#define QUERY_LEN a.query_len
 #define METHOD a.method
 #define CONTEXT a.appcontext
 #define LOCATE_HEADER(arg1, arg2) locate_header(arg1, arg2, a.servercontext2)
@@ -62,12 +66,14 @@ const char *headers_table[] = {"Content-Type: text/html;charset=utf-8", "Server:
 // expected pages
 
 enum pages {
+	UNKNOWN_PAGE_PART   = 0,
 	TITLE_PAGE_PART     = 1,
 	SITENAME_PAGE_PART  = 2,
 	FOOTER_PAGE_PART    = 3,
 	CONTENT_PAGE_PART   = 4,
 	REPEATONE_PAGE_PART = 5,
 	REPEATTWO_PAGE_PART = 6,
+	TAGS_PAGE_PART      = 7,
 	PAGES_MAX
 };
 
@@ -91,32 +97,38 @@ http_methods http_determine_method(const char *ptr, size_t len) {
 	}
 }
 
+#define TAGS_PAGE_NAME "tags"
 #define TITILE_PAGE_NAME "title"
-#define SITE_NAME "sitename"
 #define FOOTER_PAGE_NAME "footer"
 #define CONTENT_PAGE_NAME "content"
+#define SITE_NAME "sitename"
 #define REPEATONE_PAGE_NAME "repeat_1"
 #define REPEATTWO_PAGE_NAME "repeat_2"
 
 static inline int32_t template_tag_to_number(const char *name, int32_t length) {
 	switch (-length) {
+	case strizeof(TAGS_PAGE_NAME):
+		if (memcmp(name, TAGS_PAGE_NAME, -length) == 0) return -TAGS_PAGE_PART;
+		break;
 	case strizeof(TITILE_PAGE_NAME):
 		if (memcmp(name, TITILE_PAGE_NAME, -length) == 0) return -TITLE_PAGE_PART;
-		return -length;
+		break;
 	case strizeof(FOOTER_PAGE_NAME):
 		if (memcmp(name, FOOTER_PAGE_NAME, -length) == 0) return -FOOTER_PAGE_PART;
-		return -length;
+		break;
 	case strizeof(CONTENT_PAGE_NAME):
 		if (memcmp(name, CONTENT_PAGE_NAME, -length) == 0) return -CONTENT_PAGE_PART;
-		return -length;
+		break;
 	case strizeof(REPEATONE_PAGE_NAME):
 		if (memcmp(name, SITE_NAME, -length) == 0) return -SITENAME_PAGE_PART;
 		if (memcmp(name, REPEATONE_PAGE_NAME, -length) == 0) return -REPEATONE_PAGE_PART;
 		if (memcmp(name, REPEATTWO_PAGE_NAME, -length) == 0) return -REPEATTWO_PAGE_PART;
-		return -length;
+		// fallthrough
 	default:
-		return -length;
+		break;
 	}
+
+	return UNKNOWN_PAGE_PART;
 }
 
 bool app_prepare(void **ptr) {
@@ -270,7 +282,7 @@ static inline void selector_show_tag_processing(reqargs a, struct blog_record *b
 	}
 }
 
-static void selector(reqargs a, unsigned limit, unsigned offset, unix_epoch from, unix_epoch to, struct blog_record *b, bool end_at_vline) {
+static void selector(reqargs a, unsigned limit, unsigned offset, struct list_filter filter, struct blog_record *b, bool end_at_vline) {
 	// above
 	// select records by criteria on a single page
 
@@ -278,9 +290,9 @@ static void selector(reqargs a, unsigned limit, unsigned offset, unix_epoch from
 	essb *e = &con->templates;
 	struct layer_context *l = &con->layer;
 
-	struct select s = {.limit = limit, .end_at_vline = true};
+	struct select s = {.limit = limit, .end_at_vline = end_at_vline};
 	s.found = alloca(sizeof(unsigned long) * limit);
-	if (list_records(&limit, s.found, offset, from, to, l, NULL) == false) return notfound(a);
+	if (list_records(&limit, s.found, offset, filter, l, NULL) == false) return notfound(a);
 
 	for (; s.iter < e->records_amount; s.iter++) {
 		if (e->record_size[s.iter] < 0) {
@@ -303,8 +315,34 @@ static void title(reqargs a) {
 		.datasource = config.title_page_content,
 		.datasourcelen = config.title_page_content_len,
 	};
-	selector(a, 4, 0, (unix_epoch) 0l, (unix_epoch) 2147483647l, &b, true);
+	struct list_filter filter = {.from.t = 0l, .to.t = 2147483647l}; // (unix_epoch) 0l, (unix_epoch) 2147483647l
+	selector(a, 4, 0, filter, &b, true);
 }
+
+static void show_with_tags(reqargs a) {
+	// show records with specific tag
+
+	size_t size = 0;
+	char *find = post_query_finder("tag", QUERY, QUERY_LEN, &size);
+	if (find == NULL or size == 0) return notfound(a);
+	char tag[size + sizeof('\0')];
+	memcpy(tag, find, size);
+	tag[size] = '\0';
+	char *tags[2] = {tag, NULL};
+
+	struct blog_record b = {
+		.title = find,
+		.titlelen = size,
+		.datasource = default_show_tags_content,
+		.datasourcelen = default_show_tag_content_len,
+	};
+	// some day, later, this page will be just a "search" page by different filters, including "tag"
+	struct list_filter filter = {.from.t = 0l, .to.t = 2147483647l, .tags = tags};
+	selector(a, 4, 0, filter, &b, true);
+}
+
+#define LI_PREF "<li><a href=/tags?tag="
+#define LI_SUFF "</a></li>"
 
 static inline void record_show_tag_processing(reqargs a, int32_t tag, struct blog_record b) {
 	tag = -tag;
@@ -325,6 +363,20 @@ static inline void record_show_tag_processing(reqargs a, int32_t tag, struct blo
 				memset(found, ' ', strizeof(VLINE_HTMLTAG));
 			}
 			APP_WRITE(b.datasource, b.datasourcelen);
+		}
+			break;
+		case TAGS_PAGE_PART:
+		{
+			char **tags = b.tags;
+			while(*tags) {
+				size_t taglen = strlen(*tags);
+				APP_WRITE(LI_PREF, strizeof(LI_PREF));
+				APP_WRITE(*tags, taglen);
+				APP_WRITE(">", strizeof(">"));
+				APP_WRITE(*tags, taglen);
+				APP_WRITE(LI_SUFF, strizeof(LI_SUFF));
+				tags++;
+			}
 		}
 			break;
 		default:
@@ -353,9 +405,12 @@ static void show_record(reqargs a, uint32_t record) {
 	}
 }
 
+//#define IFREQ(page, fun) do{if(REQUEST_LEN==strizeof(page) and !memcmp(REQUEST, page, strizeof(page))) return fun(a);}while(0)
+
 void app_request(reqargs a) {
 	if (METHOD != GET or REQUEST_LEN == 0 or REQUEST[0] != '/') return notfound(a);
 	if (REQUEST_LEN == 1 and REQUEST[0] == '/') return title(a);
+	if (REQUEST_LEN == strizeof("/tags") and !memcmp(REQUEST, "/tags", strizeof("/tags"))) return show_with_tags(a);
 	return show_record(a, get_u32_from_end_of_string(REQUEST, REQUEST_LEN));
 }
 
