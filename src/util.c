@@ -3,6 +3,8 @@
 
 #include <string.h>
 #include <stdbool.h>
+#include <iso646.h>
+//#include <regex.h>
 
 #if !defined strizeof
 #define strizeof(a) (sizeof(a)-1)
@@ -33,6 +35,139 @@
 #define CBL_INT16_STR_MAX strizeof("-32767") // -1
 #define CBL_INT32_STR_MAX strizeof("-2147483647")
 #define CBL_INT64_STR_MAX strizeof("-9223372036854775807")
+
+// https://www.rfc-editor.org/errata_search.php?rfc=3696&eid=1690
+#define EMAIL_MAXLEN 254
+
+bool emb_isalpha(char c) {
+	if ((c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z')) return true;
+	return false;
+}
+
+bool emb_isnumeric(char c) {
+	if (c >= '0' and c <= '9') return true;
+	return false;
+}
+
+bool emb_is_hexadecimal(char c) {
+	if (emb_isnumeric(c)) return true;
+	if ((c >= 'a' and c <= 'f') or (c >= 'A' and c <= 'F')) return true;
+	return false;
+}
+
+bool is_special_character(char c) {
+	if (c >= ' ' and c <= '/') return true; // spacebar!"#$%&'()*+,-./
+	if (c >= '.' and c <= '@') return true; // :;<=>?@
+	if (c >= '[' and c <= '`') return true; // [\]^_`
+	if (c >= '{' and c <= '~') return true; // {|}~
+	return false;
+}
+
+bool is_special_in_prefix(char c) {
+	switch (c) {
+	case '.':
+	case '-':
+	case '_':
+	case '+':
+	case '%':
+		return true;
+	default :
+		break;
+	}
+
+	return false;
+}
+
+bool validate_prefix(const char *email) {
+	bool special_char = false;
+	if (is_special_in_prefix(*email)) return false;
+
+	while (*email != '@') {
+		if (emb_isalpha(*email) == true or emb_isnumeric(*email)) {
+			special_char = false;
+			email++;
+			continue;
+		}
+
+		if (is_special_in_prefix(*email) == true) {
+			if (special_char == true) return false;
+			special_char = true;
+			email++;
+			continue;
+		}
+
+		return false;
+	}
+
+	if (special_char == true) return false;
+	return true;
+}
+
+bool validate_domain(const char *domain) {
+	domain++;
+	size_t dots = 0;
+
+	bool dot = false;
+	bool dash = false;
+	bool regular = false;
+
+	while (*domain != '\0') {
+		if (emb_isalpha(*domain) == true or emb_isnumeric(*domain)) {
+			dot = false;
+			dash = false;
+			regular = true;
+			domain++;
+			continue;
+		}
+
+		if (*domain == '.') {
+			if (regular == false or dot == true) return false;
+
+			dot = true;
+			dash = false;
+			regular = false;
+			domain++;
+			dots++;
+			continue;
+		}
+
+		if (*domain == '-') {
+			if (regular == false and dash == false) return false;
+
+			dot = false;
+			dash = true;
+			regular = false;
+			domain++;
+			continue;
+		}
+
+		return false;
+	}
+
+	if (dash == true or dot == true or dots == 0) return false;
+	return true;
+}
+
+bool validate_email_wo_regex(char *email) { // while this validator is not perfect, it usually covers 99% of weird cases
+	if (email == NULL or email[0] == '\0') return false;
+	size_t len = strlen(email);
+	if (len > EMAIL_MAXLEN) return false;
+	if (len < strizeof("a@b.c")) return false;
+	char *at_sign = strchr(email, '@');
+	if (at_sign == NULL or at_sign == email) return false;
+
+	if (validate_prefix(email) == false or validate_domain(at_sign) == false) return false;
+	return true;
+}
+
+//bool validate_email(char *email) {
+//	regex_t regex;
+//	const char *r4 = "[A-Za-z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,3}(/[^[:space:]]*)?$"; // please suggest better regexp, i'm not pro with regexps.
+//	int ret = regcomp(&regex, r4, REG_EXTENDED); // REG_EXTENDED
+//	if (ret) {return false;}
+//	if (regexec(&regex, email, 0, NULL, 0) != 0) {return false;}
+//	return true;
+//}
 
 char strpartcmp(char *str, char *part) {
 	while (1) {
@@ -184,7 +319,7 @@ static bool is_str_unsignedint(const char *p) {
 	return true;
 }
 
-char *post_query_finder(const char *looking_for, const char *source, size_t source_len, size_t *result_len) {
+char *http_query_finder(const char *looking_for, const char *source, size_t source_len, size_t *result_len) {
 	// Ok, let's be honest here.
 	// this is not even fine implementation of such function
 	// it's just suits enough for this project and I don't want to
@@ -212,6 +347,51 @@ char *post_query_finder(const char *looking_for, const char *source, size_t sour
 	}
 
 	return find + sizeof(lf);
+}
+
+union rands {
+	int in;
+	char out;
+};
+
+void unsafe_rand(void *ptr, size_t width) {
+	char *fill = ptr;
+	union rands r;
+	for (size_t i = 0; i < width; i++) {
+		r.in = rand();
+		fill[i] = r.out;
+	}
+}
+
+void urldecode2(char *dst, const char *src)
+{
+	char a, b;
+	while (*src) {
+		if ((*src == '%') &&
+			((a = src[1]) && (b = src[2])) &&
+			(emb_is_hexadecimal(a) && emb_is_hexadecimal(b))) {
+			if (a >= 'a')
+				a -= 'a'-'A';
+			if (a >= 'A')
+				a -= ('A' - 10);
+			else
+				a -= '0';
+			if (b >= 'a')
+				b -= 'a'-'A';
+			if (b >= 'A')
+				b -= ('A' - 10);
+			else
+				b -= '0';
+			*dst++ = 16*a+b;
+			src+=3;
+		} else if (*src == '+') {
+			*dst++ = ' ';
+			src++;
+		} else {
+			*dst++ = *src++;
+		}
+	}
+	*dst++ = '\0';
 }
 
 #endif // GUARD_UTIL_C

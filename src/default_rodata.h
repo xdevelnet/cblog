@@ -1,7 +1,10 @@
 #ifndef CBLOG_DEFAULT_RODATA_H
 #define CBLOG_DEFAULT_RODATA_H
 
-#define HOW_MANY_RECORDS_U_WANT_TO_SEE_ON_TITLEPAGE 5
+#define HOW_MANY_RECORDS_U_WANT_TO_SEE_ON_TITLEPAGE 4
+#define DEFAULT_MINIMUM_PASSWORD_LEN 7
+
+#define DEFAULT_CRED_HASHING_SALT "change_this_salt"
 
 const char default_appname[] = "Blog demo";
 size_t default_appnamelen = strizeof(default_appname);
@@ -18,5 +21,9 @@ const char default_title_content[] = ""
 size_t default_title_content_len = strizeof(default_title_content);
 const char default_show_tags_content[] = "Displaying blog by tag";
 size_t default_show_tag_content_len = strizeof(default_show_tags_content);
+const bool default_password_specialchars_needed = false;
+
+const char default_form_html[] = "<form action=\"/user\" method=\"POST\"><input type=\"text\" placeholder=\"Enter Username\" name=\"name\" required><br><input type=\"password\" placeholder=\"Enter Password\" name=\"password\" required><br><button type=\"submit\">Login</button></form>";
+size_t default_form_html_len = strizeof(default_form_html);
 
 #endif //CBLOG_DEFAULT_RODATA_H

@@ -1,4 +1,4 @@
-bool initialize_mysql_context(const void *addr, void *context, const char **error) {
+bool initialize_mysql_context(struct data_layer *d, const char **error) {
 	return NULL;
 }
 
@@ -18,6 +18,11 @@ bool insert_record_mysql(struct blog_record *r, void *context, const char **erro
 }
 
 bool key_val_mysql(const char *key, void *value, ssize_t *size, void *context, const char **error) {
+	*error = data_layer_error_havent_implemented;
+	return false;
+}
+
+bool user_mysql(struct usr *usr, struct user_action action, void *context, const char **error) {
 	*error = data_layer_error_havent_implemented;
 	return false;
 }

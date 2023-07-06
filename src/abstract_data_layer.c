@@ -5,6 +5,7 @@
 #include "../../md4c/src/md4c.c"
 #include "../../md4c/src/md4c-html.c"
 #include "../../md4c/src/entity.c"
+#include "external/sha256.c"
 
 typedef union {
 	time_t t;
@@ -42,12 +43,42 @@ struct layer_context {
 	uint32_t g;
 	uint32_t h;
 	uint32_t i;
-}; // 40 byte context is probably enough for any engine needs
+	uint32_t j;
+	uint32_t k;
+	uint32_t l;
+}; // 48 byte context is probably enough for any engine needs
 
 struct list_filter {
 	unix_epoch from; // unixtime
 	unix_epoch to;
 	char **tags;
+};
+
+enum user_status {UNCONFIRMED, ACTIVE, RESERVED, DEACTIVATED};
+
+union expiration { // depending on status, different expiration should be used
+	unix_epoch approve_code_expiration; // UNCONFIRMED
+	unix_epoch login_ban_expiration; // ACTIVE
+	unix_epoch deactivated_expiration; // DEACTIVATED
+};
+
+struct usr {
+	uint32_t id;
+	char display_name[64]; // enough for most of UTF-8 names
+	char email[EMAIL_MAXLEN + sizeof(char)];
+	char credentials[SHA256_BLOCK_SIZE];
+	enum user_status status;
+	unix_epoch create_time;
+	char approve_code[8];
+	union expiration expiration;
+};
+
+enum user_operation {CHECK, SELECT, ALTER, ADD, REMOVE};
+enum user_filter {BY_ID, BY_NAME, BY_EMAIL};
+
+struct user_action {
+	enum user_operation operation;
+	enum user_filter filter;
 };
 
 const char data_layer_error_init[] = "Data layer haven't been initialized";
@@ -57,8 +88,10 @@ const char data_layer_error_not_enough_stack_space[] = "Not enough stack space i
 const char data_layer_error_metadata_corrupted[] = "Metadata corrupted. Storage engine can't be used.";
 const char data_layer_error_invalid_argument[] = "Invalid argument.";
 const char data_layer_error_invalid_argument_utf8[] = "One of the arguments contains invalid utf-8 string";
-const char data_layer_error_record_already_exist[] = "You are attempting to insert a record that's already exist";
-const char data_layer_error_unable_to_process_kval[] = "Operation with choosen key-value pair wasn't successful";
+const char data_layer_error_data_already_exist[] = "You are attempting to insert a data that's already exist";
+const char data_layer_error_user_already_exist[] = "You are attempting to create an user that's already exist";
+const char data_layer_error_unable_to_process_kval[] = "Operation with chosen key-value pair wasn't successful";
+const char data_layer_error_item_not_found[] = "Not found";
 
 const char meta_display_source [] = "source";
 const char meta_display_data   [] = "data";
@@ -112,6 +145,15 @@ bool key_val_dummy(const char *key, void *value, ssize_t *size, void *context, c
 	return false;
 }
 
+bool user_dummy(struct usr *usr, struct user_action action, void *context, const char **error) {
+	UNUSED(usr);
+	UNUSED(action);
+	UNUSED(context);
+
+	*error = data_layer_error_init;
+	return false;
+}
+
 bool (*list_records)(unsigned *, unsigned long *, unsigned, struct list_filter, void *, const char **) = list_records_dummy;
 // attempt to fill a limited-size array integers which corresponds record's id
 bool (*get_record)(struct blog_record *, unsigned , void *, const char **) = get_record_dummy;
@@ -122,14 +164,7 @@ bool (*key_val)(const char *, void *, ssize_t *, void *, const char **) = key_va
 // simple key-value storage. if size equals zero - we're checking if pair exists.
 // If size is greater than zero, we're attempting to insert a new record
 // If size is less than zero, we're attempting to retrieve a record
-
-#ifdef DATA_LAYER_MYSQL
-#include "abstract_data_layer_mysql.c"
-#endif
-
-#ifdef DATA_LAYER_FILENO
-#include "abstract_data_layer_fileno.c"
-#endif
+bool (*user)(struct usr *, struct user_action, void *, const char **) = user_dummy;
 
 enum datalayer_engines {
 	ENGINE_NULL,
@@ -140,6 +175,23 @@ enum datalayer_engines {
 	ENGINE_FILENO,
 #endif
 };
+
+typedef void (*datalayer_rand_fun)(void *, size_t);
+
+struct data_layer {
+	enum datalayer_engines e;
+	const void *addr;
+	void *context;
+	datalayer_rand_fun randfun;
+};
+
+#ifdef DATA_LAYER_MYSQL
+#include "abstract_data_layer_mysql.c"
+#endif
+
+#ifdef DATA_LAYER_FILENO
+#include "abstract_data_layer_fileno.c"
+#endif
 
 const char *layer_engine_to_str(enum datalayer_engines e) {
 #ifdef DATA_LAYER_MYSQL
@@ -162,15 +214,16 @@ enum datalayer_engines str_to_layer_engine(const char *str) {
 	return ENGINE_NULL;
 }
 
-bool initialize_engine(enum datalayer_engines e, const void *addr, void *context, const char **error) {
-	switch (e) {
+bool initialize_engine(struct data_layer *d, const char **error) {
+	switch (d->e) {
 #ifdef DATA_LAYER_MYSQL
 	case ENGINE_MYSQL:
 		list_records = list_records_mysql;
 		get_record = get_record_mysql;
 		insert_record = insert_record_mysql;
 		key_val = key_val_mysql;
-		return initialize_mysql_context(addr, context, error);
+		user = user_mysql;
+		return initialize_mysql_context(d, error);
 #endif
 #ifdef DATA_LAYER_FILENO
 	case ENGINE_FILENO:
@@ -178,12 +231,15 @@ bool initialize_engine(enum datalayer_engines e, const void *addr, void *context
 		get_record = get_record_fileno;
 		insert_record = insert_record_fileno;
 		key_val = key_val_fileno;
-		return initialize_fileno_context(addr, context, error);
+		user = user_fileno;
+		return initialize_fileno_context(d, error);
 #endif
 	default:
 		*error = data_layer_error_wrong_engine;
-		return NULL;
+		break;
 	}
+
+	return false;
 }
 
 void deinitialize_engine(enum datalayer_engines e, void *context) {

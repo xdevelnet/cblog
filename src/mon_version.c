@@ -39,6 +39,13 @@ static void write_fun_stub(const void *addr, unsigned long amount, void *context
 	write_fun(addr, amount, context);
 }
 
+static void read_fun(void *addr, unsigned long *amount, void *context) {
+	struct mg_http_message *hm = context;
+	if (*amount > INT_MAX) *amount = INT_MAX;
+	*amount = (unsigned long) hm->body.len;
+	if (*amount > 0) memcpy(addr, hm->body.ptr, *amount);
+}
+
 static const char *locate_header_fun(const char *hdr, size_t *len, void *context) {
 	struct mg_str *m = mg_http_get_header(context, hdr);
 	if (m == NULL) return NULL;
@@ -62,6 +69,7 @@ static void cb(struct mg_connection *c, int ev, void *ev_data, void *fn_data) {
 	}
 
 	app_write = write_fun_stub;
+	app_read = read_fun;
 	set_http_status_and_hdr = set_http_status_and_hdr_fun;
 	reqargs a = {.servercontext1 = c,
 				 .servercontext2 = hm,
@@ -76,10 +84,19 @@ static void cb(struct mg_connection *c, int ev, void *ev_data, void *fn_data) {
 	mg_http_write_chunk(c, "", 0);
 }
 
+int randfd;
+void rfill(void *ptr, size_t size) {
+	ssize_t got = read(randfd, ptr, size);
+	if (got < 0) unsafe_rand(ptr, size);
+}
+
 int main(int argc, char **argv) {
 	signal(SIGINT, signal_handler);
 	signal(SIGTERM, signal_handler);
 	locate_header = locate_header_fun;
+	randfd = open("/dev/urandom", O_RDONLY);
+	if (randfd < 0) return EXIT_FAILURE;
+	struct appconfig config = {.r = rfill};
 	set_config_defaults(&config);
 	if (argc > 1) {
 		const char *error;
@@ -95,9 +112,9 @@ int main(int argc, char **argv) {
 	mg_log_set(MG_LL_INFO);
 	char contextbuffer[CONTEXTAPPBUFFERSIZE];
 	void *appcontext = contextbuffer;
-	if (app_prepare(&appcontext) == false) {
+	if (app_prepare(&appcontext, &config) == false) {
 		parse_config_erase(&config);
-		MG_ERROR(("Unable to initialize app"));
+		MG_ERROR(("Unable to initialize app, reason: %s\n", contextbuffer));
 		return EXIT_FAILURE;
 	}
 	if ((mg_http_listen(&mgr, "http://0.0.0.0:8000", cb, appcontext)) == NULL) {

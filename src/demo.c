@@ -36,20 +36,30 @@ static int nop(struct layer_context *con, const char *error) {
 	return EXIT_FAILURE;
 }
 
+int randfd;
+void rfill(void *ptr, size_t size) {
+	ssize_t got = read(randfd, ptr, size);
+	if (got < 0) unsafe_rand(ptr, size);
+}
+
 int main(int argc, char **argv) {
 	if (argc < 2) {
 		return printf("You should specify the path to testdata. Example:\n./demo demo_data\n");
 	}
 
+	randfd = open("/dev/urandom", O_RDONLY);
+	if (randfd < 0) return EXIT_FAILURE;
+
 	addr = argv[1];
 
-	if (mkdir(argv[1], 0777) != 0) {
-		return printf("Failed to create a directory (%s) for demo data: %s\n", argv[1], strerror(errno));
+	if (mkdir(addr, 0777) != 0) {
+		return printf("Failed to create a directory (%s) for demo data: %s\n", addr, strerror(errno));
 	}
 
 	struct layer_context con;
 	const char *error;
-	if (initialize_engine(ENGINE_FILENO, argv[1], &con, &error) == false) {
+	struct data_layer d = {.e = ENGINE_FILENO, .addr = addr, .context = &con, .randfun = rfill};
+	if (initialize_engine(&d, &error) == false) {
 		printf("Failed to initialize engine: %s\n", error);
 		return EXIT_FAILURE;
 	}
@@ -109,6 +119,19 @@ int main(int argc, char **argv) {
 	if (insert_record(b + 2, &con, &error) == false) return nop(&con, error);
 	if (insert_record(b + 3, &con, &error) == false) return nop(&con, error);
 	if (insert_record(b + 4, &con, &error) == false) return nop(&con, error);
+
+	struct usr u = {
+		.id = 1,
+		.display_name = "Kind admin",
+		.email = "dasdas@asdas.com",
+		.credentials = "DJASKODJASDHAS",
+		.status = ACTIVE,
+		.create_time.t = 981239128,
+		.approve_code = "12345",
+		.expiration.approve_code_expiration.t = 7897897,
+	};
+	struct user_action action = {.operation = ADD};
+	if (user(&u, action, &con, &error) == false) return nop(&con, error);
 
 	puts("Done!");
 

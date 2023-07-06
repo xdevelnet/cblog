@@ -8,6 +8,8 @@
 #include <errno.h>
 #include <stdio.h>
 #include <sys/mman.h>
+#include <inttypes.h>
+#include "fileno_util.c"
 
 #define DEFAULT_FILE_MODE (S_IREAD | S_IWRITE | S_IRGRP | S_IROTH)
 
@@ -15,6 +17,8 @@ const char fileno_data_dir[] = "data";
 const char fileno_datasource_dir[] = "html";
 const char fileno_tag_dir[] = "tags";
 const char fileno_keyval_dir[] = "sessions";
+const char fileno_users_dir[] = "users";
+const char fileno_rbac_dir[] = "rbac";
 const char fileno_last_record_file[] = "last_record";
 
 /* This engine is operating with the following directory structure
@@ -39,8 +43,13 @@ const char fileno_last_record_file[] = "last_record";
  *                       2
  *                       3
  *           sessions/
- *                userkeydasdsa
- *                userkeyabcdef
+ *                    session_dasiodsaiodnas
+ *                    session_cxzkclzxncckzz
+ *           users/
+ *                 1
+ *                 2
+ *                 3
+ *                 last_user
  *           1
  *           2
  *           3
@@ -71,32 +80,28 @@ const char fileno_last_record_file[] = "last_record";
 
 struct fileno_context {
 	const void *addr;
+	datalayer_rand_fun randfun;
 	int dfd;
 	int datafd;
 	int datasourcefd;
 	int tagsfd;
 	int keyvalfd;
+	int users;
+	int rbac;
 };
-
-int randfd = -1;
 
 #define OUCH_ERROR(errmsg, action) do {if (error) *error = errmsg; action;} while(0)
 
 pthread_mutex_t scanmutex;
 bool mutex_initialized = false;
 
-static bool initialize_fileno_context(const void *addr, void *context, const char **error) {
+static bool initialize_fileno_context(struct data_layer *d, const char **error) { // d->addr, d->context
 	if (mutex_initialized == false) {
 		mutex_initialized = true;
 		pthread_mutex_init(&scanmutex, 0);
 	}
 
-	srand((unsigned int) time(NULL));
-	if (randfd < 0) {
-		randfd = open("/dev/urandom", O_RDONLY);
-	}
-
-	char *path = realpath(addr, NULL);
+	char *path = realpath(d->addr, NULL);
 	if (path == NULL) OUCH_ERROR("Request address for engine has not found", return false);
 	size_t realpathlen = strlen(path);
 	free(path);
@@ -106,23 +111,30 @@ static bool initialize_fileno_context(const void *addr, void *context, const cha
 		OUCH_ERROR("You managed to put storage files so deep, that resulting path length may reach 4096 bytes! OMG!", return false);
 	}
 
-	struct fileno_context *ret = context;
-	ret->addr = addr;
-	ret->dfd = open(addr, O_DIRECTORY | O_RDONLY);
+	struct fileno_context *ret = d->context;
+	ret->randfun = d->randfun;
+	ret->addr = d->addr;
+	ret->dfd = open(d->addr, O_DIRECTORY | O_RDONLY);
 	ret->datafd = -1;
 	ret->datasourcefd = -1;
 	ret->keyvalfd = -1;
+	ret->users = -1;
+	ret->rbac = -1;
 
 	if (ret->dfd < 0) goto fail;
 	if (mkdirat(ret->dfd, fileno_data_dir, 0700) != 0 and errno != EEXIST) goto fail;
 	if (mkdirat(ret->dfd, fileno_datasource_dir, 0700) != 0 and errno != EEXIST) goto fail;
 	if (mkdirat(ret->dfd, fileno_tag_dir, 0700) != 0 and errno != EEXIST) goto fail;
 	if (mkdirat(ret->dfd, fileno_keyval_dir, 0700) != 0 and errno != EEXIST) goto fail;
+	if (mkdirat(ret->dfd, fileno_users_dir, 0700) != 0 and errno != EEXIST) goto fail;
+	if (mkdirat(ret->dfd, fileno_rbac_dir, 0700) != 0 and errno != EEXIST) goto fail;
 	ret->datafd = openat(ret->dfd, fileno_data_dir, O_DIRECTORY | O_RDONLY);
 	ret->datasourcefd = openat(ret->dfd, fileno_datasource_dir, O_DIRECTORY | O_RDONLY);
 	ret->tagsfd = openat(ret->dfd, fileno_tag_dir, O_DIRECTORY | O_RDONLY);
 	ret->keyvalfd = openat(ret->dfd, fileno_keyval_dir, O_DIRECTORY | O_RDONLY);
-	if (ret->datafd < 0 or ret->datasourcefd < 0 or ret->tagsfd < 0 or ret->keyvalfd < 0) goto fail;
+	ret->users = openat(ret->dfd, fileno_users_dir, O_DIRECTORY | O_RDONLY);
+	ret->rbac = openat(ret->dfd, fileno_rbac_dir, O_DIRECTORY | O_RDONLY);
+	if (ret->datafd < 0 or ret->datasourcefd < 0 or ret->tagsfd < 0 or ret->keyvalfd < 0 or ret->users < 0 or ret->rbac < 0) goto fail;
 	return true;
 
 fail:
@@ -130,6 +142,8 @@ fail:
 	close(ret->datafd);
 	close(ret->datasourcefd);
 	close(ret->keyvalfd);
+	close(ret->users);
+	close(ret->rbac);
 	OUCH_ERROR(strerror(errno), return false);
 }
 
@@ -141,6 +155,8 @@ void deinitialize_engine_fileno(void *context) {
 	close(ret->datafd);
 	close(ret->datasourcefd);
 	close(ret->keyvalfd);
+	close(ret->users);
+	close(ret->rbac);
 }
 
 unix_epoch glob_from; // these variables should be protected with scanmutex
@@ -193,13 +209,13 @@ bool list_records_fileno(unsigned *amount,// Pointer that could be used for limi
 
 	char path[PATH_MAX];
 	do {
-		if (filter.tags == NULL or filter.tags[0] == NULL) break; puts("AAAAA!"); puts(filter.tags[0]);
+		if (filter.tags == NULL or filter.tags[0] == NULL) break;
 		int dfd = openat(f->tagsfd, filter.tags[0], O_DIRECTORY | O_RDONLY); // that's the main limitation of fileno engine - we only support filtering by one tag
-		if (dfd < 0) { puts("AAAAA2!"); perror(NULL);
+		if (dfd < 0) {
 			*amount = 0;
 			break;
 		}
-		snprintf(path, PATH_MAX, "%s/tags/%s", scanaddr, filter.tags[0]); puts(path);
+		snprintf(path, PATH_MAX, "%s/tags/%s", scanaddr, filter.tags[0]);
 		scanfd = dfd;
 		scanaddr = path;
 	} while(0);
@@ -470,15 +486,11 @@ static bool get_record_fileno(struct blog_record *r, unsigned choosen_record, vo
 
 #define RANDBYTES_WIDTH 11
 
-static void randfilename(char *ptr, size_t len) {
-	const char pool[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+static void randfilename(struct fileno_context *f, char *ptr, size_t len) {
+	const char pool[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz123456789";
 	char randbytes[RANDBYTES_WIDTH];
-	ssize_t got = read(randfd, randbytes, sizeof(randbytes));
-	if (randfd < 0 or got < (ssize_t) sizeof(randbytes)) { //fallback
-		for (unsigned i = 0; i < sizeof(randbytes); i++) {
-			randbytes[i] = (char) rand();
-		}
-	}
+
+	f->randfun(randbytes, sizeof(randbytes));
 
 	for (unsigned i = 0; i < sizeof(randbytes); i++) {
 		randbytes[i] = pool[randbytes[i] % (sizeof(pool) - 1)];
@@ -533,14 +545,14 @@ static bool flush_files(int meta, struct fileno_context *f, struct blog_record *
 	strcpy(name2, name);
 
 	if (r->datalen > 0) while(1) {
-		randfilename(name, len);
+		randfilename(f, name, len);
 		fd = openat(f->datafd, name, O_RDWR | O_CREAT | O_EXCL, DEFAULT_FILE_MODE);
 		if (fd >= 0) break;
 		if (errno != EEXIST) OUCH_ERROR(strerror(errno), return false);
 	}
 
 	if (r->datasourcelen > 0 or r->display == DISPLAY_BOTH or r->display == DISPLAY_SOURCE) while(1) {
-		randfilename(name2, len);
+		randfilename(f, name2, len);
 		sfd = openat(f->datasourcefd, name2, O_RDWR | O_CREAT | O_EXCL, DEFAULT_FILE_MODE);
 		if (fd >= 0) break;
 		if (errno != EEXIST) {
@@ -631,7 +643,7 @@ bool insert_record_fileno(struct blog_record *r, void *context, const char **err
 
 	int metadata = openat(f->dfd, last_record_str, O_RDWR | O_CREAT | O_EXCL, DEFAULT_FILE_MODE);
 	if (metadata < 0) {
-		if (errno == EEXIST) OUCH_ERROR(data_layer_error_record_already_exist, close(last_record_storage_fd); return false);
+		if (errno == EEXIST) OUCH_ERROR(data_layer_error_data_already_exist, close(last_record_storage_fd); return false);
 		OUCH_ERROR(strerror(errno), close(last_record_storage_fd); return false);
 	}
 
@@ -655,13 +667,22 @@ bool key_val_fileno(const char *key, void *value, ssize_t *size, void *context, 
 	struct fileno_context *f = context;
 
 	if (*size == 0) {
+		if (key == NULL) return false;
 		if (faccessat(f->keyvalfd, key, R_OK | W_OK, 0) == 0) return true;
 		return false;
 	}
 
 	if (*size > 0) {
+		char name[NAME_MAX] = "session_";
+		if (key == NULL) {
+			randfilename(f, name, strizeof("session_"));
+		}
+		puts(name);
 		int fd = openat(f->keyvalfd, key, O_CREAT | O_RDWR | O_EXCL, DEFAULT_FILE_MODE);
-		if (fd < 0) OUCH_ERROR(strerror(errno), return false);
+		if (fd < 0) {
+			if (errno == EEXIST) OUCH_ERROR(data_layer_error_data_already_exist, return false);
+			OUCH_ERROR(strerror(errno), return false);
+		}
 		ssize_t got = write(fd, value, (size_t) size);
 		close(fd);
 		if (got < *size) {
@@ -672,12 +693,110 @@ bool key_val_fileno(const char *key, void *value, ssize_t *size, void *context, 
 		return true;
 	}
 
-	int fd = openat(f->keyvalfd, key, O_CREAT | O_RDWR | O_EXCL, DEFAULT_FILE_MODE);
-	if (fd < 0) OUCH_ERROR(strerror(errno), return false);
+	if (key == NULL) return false;
+	int fd = openat(f->keyvalfd, key,  O_RDWR , DEFAULT_FILE_MODE);
+	if (fd < 0) {
+		if (errno == ENOENT) OUCH_ERROR(data_layer_error_item_not_found, return false);
+		OUCH_ERROR(strerror(errno), return false);
+	}
 	ssize_t got = read(fd, value, (size_t) -*size);
 	close(fd);
 	if (got < 0) OUCH_ERROR(strerror(errno), return false);
 	*size = got;
 
 	return true;
+}
+
+bool user_fileno(struct usr *usr, struct user_action action, void *context, const char **error) {
+	struct fileno_context *f = context;
+
+	char filename[NAME_MAX + sizeof(char)];
+	char *target = NULL;
+	if (action.operation == ADD) {
+		if (usr->id == 0 or
+			strchr(usr->display_name, '/') != NULL or
+			usr->display_name[0] == '\0' or
+			usr->email[0] == '\0') {
+			OUCH_ERROR(data_layer_error_invalid_argument, return false);
+		}
+		int fd = openat(f->users, fileno_last_record_file, O_RDWR | O_CREAT, DEFAULT_FILE_MODE);
+		unsigned long new_user_id;
+		if (last_prepare(fd, filename, &new_user_id, error) == false) {
+			OUCH_ERROR("Unable to obtain last id file from user storage", close(fd); return false);
+		}
+
+		if (faccessat(f->users, usr->email, R_OK | W_OK, 0) == 0 or faccessat(f->users, usr->display_name, R_OK | W_OK, 0) == 0) {
+			OUCH_ERROR(data_layer_error_user_already_exist, close(fd); return false);
+		}
+
+		int userfd = openat(f->users, filename, O_RDWR | O_CREAT | O_EXCL, DEFAULT_FILE_MODE);
+		if (userfd < 0) {
+			if (errno == EEXIST) OUCH_ERROR(data_layer_error_user_already_exist, close(fd); return false);
+			OUCH_ERROR(strerror(errno), close(fd); return false);
+		}
+		usr->id = (uint32_t) new_user_id;
+		ssize_t got = write(userfd, usr, sizeof(struct usr));
+		close(userfd);
+		if (got < 0) OUCH_ERROR(strerror(errno), close(fd); unlinkat(f->users, filename, 0); return false);
+		linkat(f->users, filename, f->users, usr->email, 0);
+		linkat(f->users, filename, f->users, usr->display_name, 0);
+
+		lseek(fd, 0, SEEK_SET);
+		ftruncate(fd, 0);
+		got = sprintf(filename, "%lu", new_user_id + 1);
+		write(fd, filename, (size_t) got);
+		close(fd);
+
+		return true;
+	} else {
+		snprintf(filename, sizeof(filename), "%"PRIu32, usr->id);
+		if (action.filter == BY_ID) target = filename;
+		else if (action.filter == BY_NAME) target = usr->display_name;
+		else if (action.filter == BY_EMAIL) target = usr->email;
+		else return false;
+	}
+
+	switch (action.operation) {
+	case CHECK:
+		if (faccessat(f->users, target, R_OK | W_OK, 0) == 0) return true;
+		return false;
+	case SELECT:
+	{
+		int fd = openat(f->users, target, O_RDONLY, DEFAULT_FILE_MODE);
+		if (fd < 0) {
+			if (errno == ENOENT) OUCH_ERROR(data_layer_error_item_not_found, return false);
+			OUCH_ERROR(strerror(errno), return false);
+		}
+		ssize_t got = read(fd, usr, sizeof(struct usr));
+		close(fd);
+		if (got < 0) OUCH_ERROR(strerror(errno), return false);
+		if (got < (ssize_t) sizeof(struct usr) or usr->id == 0) OUCH_ERROR(data_layer_error_metadata_corrupted, return false);
+		return true;
+	}
+	case ALTER:
+	{ // YOU MUST PERFORM SELECT BEFORE CALLING ALTER
+		int fd = openat(f->users, target, O_RDWR, DEFAULT_FILE_MODE);
+		if (fd < 0) {
+			if (errno == ENOENT) OUCH_ERROR(data_layer_error_item_not_found, return false);
+			OUCH_ERROR(strerror(errno), return false);
+		}
+		ssize_t got = write(fd, usr, sizeof(struct usr));
+		close(fd);
+		if (got < 0) OUCH_ERROR(strerror(errno), return false);
+		if (got < (ssize_t) sizeof(struct usr)) {
+			OUCH_ERROR(data_layer_error_metadata_corrupted, return false);
+		}
+
+		return true;
+	}
+	case REMOVE:
+	{
+		if (unlinkat(f->users, target, 0) < 0) OUCH_ERROR(strerror(errno), return false); // TODO: WRONG!
+		return true;
+	}
+	default:
+		break;
+	}
+
+	return false;
 }

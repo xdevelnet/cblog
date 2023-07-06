@@ -42,6 +42,16 @@ static void write_fun(const void *addr, unsigned long amount, void *context) {
 	FCGX_PutStr(addr, (int) amount, request->out);
 }
 
+static void read_fun(void *addr, unsigned long *amount, void *context) {
+	if (amount == NULL or *amount == 0) return;
+	FCGX_Request *request = context;
+	if (*amount > INT_MAX) *amount = INT_MAX;
+
+	int got = FCGX_GetStr(addr, (int) *amount, request->in);
+	if (got < 0) *amount = 0;
+	*amount = (unsigned long) got;
+}
+
 static void set_http_status_and_hdr_fun_stub(unsigned short status, const char * const *headers, void *context) {}
 
 static void set_http_status_and_hdr_fun(unsigned short status, const char * const *headers, void *context) {
@@ -120,6 +130,7 @@ void *worker(void *arg) {
 	while (1) {
 		if (FCGX_Accept_r(&request) == -1) break;
 		app_write = write_fun_stub;
+		app_read = read_fun;
 		set_http_status_and_hdr = set_http_status_and_hdr_fun;
 //		char **ptr = request.envp;
 //		while(*ptr != NULL) {
@@ -147,15 +158,23 @@ void *worker(void *arg) {
 	return NULL;
 }
 
+int randfd;
+void rfill(void *ptr, size_t size) {
+	ssize_t got = read(randfd, ptr, size);
+	if (got < 0) unsafe_rand(ptr, size);
+}
+
 int main(int argc, char **argv) {
 	fd = FCGX_OpenSocket(sockpath, 128);
+	randfd = open("/dev/urandom", O_RDONLY);
 	FCGX_Init();
-	if (fd < 0) return EXIT_FAILURE;
+	if (fd < 0 or randfd < 0) return EXIT_FAILURE;
 	chmod(sockpath, 0777);
 	signal(SIGINT, signal_handler);  // threads WILL NOT exit unless they finish request,
-	signal(SIGTERM, signal_handler); // even if it's still received. Thats a todo.
+	signal(SIGTERM, signal_handler); // even if it's still received. That's a todo.
 	locate_header = locate_header_fun;
 
+	struct appconfig config = {.r = rfill};
 	set_config_defaults(&config);
 	if (argc > 1) {
 		const char *error;
@@ -168,8 +187,8 @@ int main(int argc, char **argv) {
 
 	char contextbuffer[sizeof(struct appcontext)];
 	void *appcontext = contextbuffer;
-	if (app_prepare(&appcontext) == false) {
-		printf("Unable to initialize app");
+	if (app_prepare(&appcontext, &config) == false) {
+		printf("Unable to initialize app, reason: %s\n", contextbuffer);
 		parse_config_erase(&config);
 		return EXIT_FAILURE;
 	}
@@ -186,6 +205,8 @@ int main(int argc, char **argv) {
 	app_finish(appcontext);
 	unlink(sockpath);
 	parse_config_erase(&config);
+	close(fd);
+	close(randfd);
 	OS_LibShutdown(); // IMO function should be exported.
 
 	return EXIT_SUCCESS;

@@ -10,6 +10,9 @@
 
 #include "default_rodata.h"
 
+typedef void (*rand_fill)(void *, size_t);
+
+#define CRED_HASHING_SALT_SIZE 16
 struct appconfig {
 	void *context;
 	size_t contextsize;
@@ -23,11 +26,17 @@ struct appconfig {
 	size_t title_page_name_len;
 	const char *title_page_content;
 	size_t title_page_content_len;
-} config;
+	char salt[CRED_HASHING_SALT_SIZE];
+	int32_t minimum_passwd_len;
+	bool passwd_specialchars;
+
+	rand_fill r;
+};
 
 struct appcontext {
 	essb templates;
 	struct layer_context layer;
+	struct appconfig *config;
 	char freebuffer[];
 };
 
@@ -46,6 +55,7 @@ typedef struct reqargs {
 const char *(*locate_header)(const char *, size_t *, void *);
 void (*set_http_status_and_hdr) (unsigned short, const char * const *, void *);
 void (*app_write) (const void *, unsigned long, void *);
+void (*app_read) (void *, unsigned long *, void *);
 
 #define REQUEST a.request
 #define REQUEST_LEN a.request_len
@@ -56,10 +66,13 @@ void (*app_write) (const void *, unsigned long, void *);
 #define LOCATE_HEADER(arg1, arg2) locate_header(arg1, arg2, a.servercontext2)
 #define SET_HTTP_STATUS_AND_HDR(arg1, arg2) set_http_status_and_hdr(arg1, arg2, a.servercontext1)
 #define APP_WRITE(arg1, arg2) app_write(arg1, arg2, a.servercontext1)
-
 #define APP_WRITECS(a) APP_WRITE(a, strizeof(a))
+#define APP_READ(arg1, argv2) app_read(arg1, argv2, a.servercontext2)
 
-const char *headers_table[] = {"Content-Type: text/html;charset=utf-8", "Server: OLOLOLO TROLOLO", NULL};
+const char default_header_content_type[] = "Content-Type: text/html;charset=utf-8";
+const char default_header_server_type[] = "Server: cblog app operator";
+
+const char *headers_table[] = {default_header_content_type, default_header_server_type, NULL};
 
 #define CONTEXTAPPBUFFERSIZE 524288
 
@@ -131,19 +144,21 @@ static inline int32_t template_tag_to_number(const char *name, int32_t length) {
 	return UNKNOWN_PAGE_PART;
 }
 
-bool app_prepare(void **ptr) {
+bool app_prepare(void **ptr, struct appconfig *config) {
+	srand((unsigned int) time(NULL));
 	struct appcontext *con = *ptr;
 	essb *e = &con->templates;
 	struct layer_context *l = &con->layer;
 	memset(e, '\0', sizeof(essb));
-	parse_essb(e, config.template_type, config.temlate_name, NULL);
+	parse_essb(e, config->template_type, config->temlate_name, NULL);
 	if (e->errreasonstr != NULL) {
 		snprintf(*ptr, CONTEXTAPPBUFFERSIZE, "Error during parsing essb: %s", e->errreasonstr);
 		return false;
 	}
 
 	const char *error;
-	if (initialize_engine(config.datalayer_type, config.datalayer_addr, l, &error) == false) {
+	struct data_layer d = {.e = config->datalayer_type, .addr = config->datalayer_addr, .context = l, .randfun = config->r};
+	if (initialize_engine(&d, &error) == false) {
 		snprintf(*ptr, CONTEXTAPPBUFFERSIZE, "Error during initializing_engine: %s", error);
 		return false;
 	}
@@ -152,6 +167,8 @@ bool app_prepare(void **ptr) {
 		if (e->record_size[i] >= 0) continue;
 		e->record_size[i] = template_tag_to_number(&e->records[e->record_seek[i]], e->record_size[i]);
 	}
+
+	con->config = config;
 
 	return true;
 }
@@ -185,21 +202,24 @@ uint32_t get_u32_from_end_of_string(const char *string, size_t len) {
 }
 
 static void notfound(reqargs a) {
+	struct appcontext *con = CONTEXT;
+	essb *e = &con->templates;
+//	struct layer_context *l = &con->layer;
+	struct appconfig *config = con->config;
+
 	SET_HTTP_STATUS_AND_HDR(404, headers_table);
 
 	const char *out[PAGES_MAX] = {
-		[SITENAME_PAGE_PART] = config.appname,
+		[SITENAME_PAGE_PART] = config->appname,
 		[TITLE_PAGE_PART]    = "404 NOT FOUND",
 		[CONTENT_PAGE_PART]  = "Sorry but we can't find content that you are looking for :(",
 	};
 	size_t outsizes[PAGES_MAX] = {
-		[SITENAME_PAGE_PART] = config.appnamelen,
+		[SITENAME_PAGE_PART] = config->appnamelen,
 		[TITLE_PAGE_PART]    = strizeof("404 NOT FOUND"),
 		[CONTENT_PAGE_PART]  = strizeof("Sorry but we can't find content that you are looking for :("),
 	};
 
-	struct appcontext *con = CONTEXT;
-	essb *e = &con->templates;
 	for (unsigned i = 0; i < e->records_amount; i++) {
 		if (e->record_size[i] < 0) APP_WRITE(out[-e->record_size[i]], outsizes[-e->record_size[i]]);
 		else APP_WRITE(&e->records[e->record_seek[i]], e->record_size[i]);
@@ -224,12 +244,13 @@ static inline void selector_show_tag_processing(reqargs a, struct blog_record *b
 	struct appcontext *con = CONTEXT;
 	essb *e = &con->templates;
 	struct layer_context *l = &con->layer;
+	struct appconfig *config = con->config;
 
 	int32_t tag = -e->record_size[s->iter];
 
 	switch (tag) {
 	case SITENAME_PAGE_PART:
-		APP_WRITE(config.appname, config.appnamelen);
+		APP_WRITE(config->appname, config->appnamelen);
 		break;
 	case TITLE_PAGE_PART:
 		if (s->href) {
@@ -293,6 +314,7 @@ static void selector(reqargs a, unsigned limit, unsigned offset, struct list_fil
 	struct select s = {.limit = limit, .end_at_vline = end_at_vline};
 	s.found = alloca(sizeof(unsigned long) * limit);
 	if (list_records(&limit, s.found, offset, filter, l, NULL) == false) return notfound(a);
+	SET_HTTP_STATUS_AND_HDR(200, headers_table);
 
 	for (; s.iter < e->records_amount; s.iter++) {
 		if (e->record_size[s.iter] < 0) {
@@ -308,24 +330,29 @@ static void selector(reqargs a, unsigned limit, unsigned offset, struct list_fil
 
 static void title(reqargs a) {
 	// show tittle page with pre-record values
+	struct appcontext *con = CONTEXT;
+//	essb *e = &con->templates;
+//	struct layer_context *l = &con->layer;
+	struct appconfig *config = con->config;
 
 	struct blog_record b = {
-		.title = config.title_page_name,
-		.titlelen = config.title_page_name_len,
-		.datasource = config.title_page_content,
-		.datasourcelen = config.title_page_content_len,
+		.title = config->title_page_name,
+		.titlelen = config->title_page_name_len,
+		.datasource = config->title_page_content,
+		.datasourcelen = config->title_page_content_len,
 	};
 	struct list_filter filter = {.from.t = 0l, .to.t = 2147483647l}; // (unix_epoch) 0l, (unix_epoch) 2147483647l
-	selector(a, 4, 0, filter, &b, true);
+	const unsigned offset = 0;
+	selector(a, HOW_MANY_RECORDS_U_WANT_TO_SEE_ON_TITLEPAGE, offset, filter, &b, true);
 }
 
 static void show_with_tags(reqargs a) {
 	// show records with specific tag
 
 	size_t size = 0;
-	char *find = post_query_finder("tag", QUERY, QUERY_LEN, &size);
+	char *find = http_query_finder("tag", QUERY, QUERY_LEN, &size);
 	if (find == NULL or size == 0) return notfound(a);
-	char tag[size + sizeof('\0')];
+	char tag[size + sizeof(char)];
 	memcpy(tag, find, size);
 	tag[size] = '\0';
 	char *tags[2] = {tag, NULL};
@@ -345,11 +372,16 @@ static void show_with_tags(reqargs a) {
 #define LI_SUFF "</a></li>"
 
 static inline void record_show_tag_processing(reqargs a, int32_t tag, struct blog_record b) {
+	struct appcontext *con = CONTEXT;
+//	essb *e = &con->templates;
+//	struct layer_context *l = &con->layer;
+	struct appconfig *config = con->config;
+
 	tag = -tag;
 
 	switch (tag) {
 		case SITENAME_PAGE_PART:
-			APP_WRITE(config.appname, config.appnamelen);
+			APP_WRITE(config->appname, config->appnamelen);
 			break;
 		case TITLE_PAGE_PART:
 			APP_WRITE(b.title, b.titlelen);
@@ -405,12 +437,134 @@ static void show_record(reqargs a, uint32_t record) {
 	}
 }
 
+static bool minimum_passwd_requirements(char *password, size_t passwd_minlen, bool passwd_specialchar) {
+	if (utf8_check(password) != NULL) return false;
+	size_t passwd_len = 0;
+	bool passwd_specialchar_presence = false;
+
+	while(*password != '\0') {
+		unsigned char width = utf8_byte_width(password);
+		if (width == sizeof(char)) {
+			if (is_special_character(*password)) passwd_specialchar_presence = true;
+		}
+		password += width;
+		passwd_len++;
+	}
+
+	if (passwd_len < passwd_minlen) return false;
+	if (passwd_specialchar == true and passwd_specialchar_presence == false) return false;
+
+	return true;
+}
+
+bool newuser(reqargs a, char *display_name, char *email, char *password) {
+	struct appcontext *con = CONTEXT;
+//	essb *e = &con->templates;
+	struct layer_context *l = &con->layer;
+	struct appconfig *config = con->config;
+
+	struct usr u = {.status = UNCONFIRMED};
+
+	size_t name_len = strlen(display_name);
+	size_t password_len = strlen(password);
+
+	if (name_len >= sizeof(u.display_name)) return false;
+	if (validate_email_wo_regex(email) == false) return false;
+	if (minimum_passwd_requirements(password, config->minimum_passwd_len, config->passwd_specialchars) == false) return false;
+
+	memcpy(u.display_name, display_name, name_len); u.display_name[name_len] = '\0';
+
+
+	SHA256_CTX ctx;
+	sha256_init(&ctx);
+	sha256_update(&ctx, (BYTE *) password, password_len);
+	sha256_final(&ctx, (BYTE *) u.credentials);
+
+	struct user_action action = {.operation = ADD};
+	user_fileno(&u, action, l, NULL);
+
+	return true;
+}
+
+void user_login(reqargs a) {
+	struct appcontext *con = CONTEXT;
+	essb *e = &con->templates;
+	struct layer_context *l = &con->layer;
+	struct appconfig *config = con->config;
+
+	const char *out[PAGES_MAX] = {
+		[SITENAME_PAGE_PART] = config->appname,
+		[TITLE_PAGE_PART]    = "Login",
+		[CONTENT_PAGE_PART]  = default_form_html,
+	};
+	size_t outsizes[PAGES_MAX] = {
+		[SITENAME_PAGE_PART] = config->appnamelen,
+		[TITLE_PAGE_PART]    = strizeof("Login"),
+		[CONTENT_PAGE_PART]  = default_form_html_len,
+	};
+
+	const char *login_headers_table[] = {default_header_content_type, default_header_server_type, NULL, NULL};
+	char cookie[sizeof("Set-Cookie: id=") + NAME_MAX];
+
+	size_t freespace = CONTEXTAPPBUFFERSIZE - (con->freebuffer - (char *) con);
+	size_t size = freespace;
+	char *post_data = con->freebuffer;
+	char *nextbuffer = NULL;
+	APP_READ(post_data, &size);
+	if (size > 0) do {
+		urldecode2(post_data, post_data);
+		nextbuffer = post_data + size;
+		struct usr *u = (void *) nextbuffer;
+		freespace -= size;
+		if (freespace < sizeof(struct usr)) break;
+		size_t namelen;
+		char *name = http_query_finder("name", con->freebuffer, size, &namelen);
+		if (name == NULL or namelen >= sizeof(u->display_name)) {
+			out[TITLE_PAGE_PART] = data_layer_error_invalid_argument;
+			outsizes[TITLE_PAGE_PART] = strizeof(data_layer_error_invalid_argument);
+			break;
+		}
+		size_t passwordlen;
+		char *password = http_query_finder("password", con->freebuffer, size, &passwordlen);
+		if (password == NULL) {
+			out[TITLE_PAGE_PART] = data_layer_error_invalid_argument;
+			outsizes[TITLE_PAGE_PART] = strizeof(data_layer_error_invalid_argument);
+			break;
+		}
+		name[namelen] = '\0';
+		password[passwordlen] = '\0';
+		memcpy(u->display_name, name, namelen);
+		u->display_name[namelen] = '\0';
+		struct user_action action = {.operation = SELECT, .filter = BY_NAME};
+		const char *error;
+		bool result = user(u, action, l, &error);
+		if (result == false) {
+			out[TITLE_PAGE_PART] = error;
+			outsizes[TITLE_PAGE_PART] = strlen(error);
+			break;
+		}
+		login_headers_table[2] = cookie;
+		strcpy(cookie, "Set-Cookie: id=");
+		out[TITLE_PAGE_PART] = "Welcome!";
+		outsizes[TITLE_PAGE_PART] = strlen(out[TITLE_PAGE_PART]);
+	} while(0);
+
+	SET_HTTP_STATUS_AND_HDR(200, login_headers_table);
+
+	for (unsigned i = 0; i < e->records_amount; i++) {
+		if (e->record_size[i] < 0) APP_WRITE(out[-e->record_size[i]], outsizes[-e->record_size[i]]);
+		else APP_WRITE(&e->records[e->record_seek[i]], e->record_size[i]);
+	}
+
+}
+
 //#define IFREQ(page, fun) do{if(REQUEST_LEN==strizeof(page) and !memcmp(REQUEST, page, strizeof(page))) return fun(a);}while(0)
 
 void app_request(reqargs a) {
-	if (METHOD != GET or REQUEST_LEN == 0 or REQUEST[0] != '/') return notfound(a);
+	if ((METHOD != GET and METHOD != POST) or REQUEST_LEN == 0 or REQUEST[0] != '/') return notfound(a);
 	if (REQUEST_LEN == 1 and REQUEST[0] == '/') return title(a);
 	if (REQUEST_LEN == strizeof("/tags") and !memcmp(REQUEST, "/tags", strizeof("/tags"))) return show_with_tags(a);
+	if (REQUEST_LEN == strizeof("/user") and !memcmp(REQUEST, "/user", strizeof("/user"))) return user_login(a);
 	return show_record(a, get_u32_from_end_of_string(REQUEST, REQUEST_LEN));
 }
 

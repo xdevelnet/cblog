@@ -12,6 +12,9 @@ void set_config_defaults(struct appconfig *conf) {
 	conf->title_page_name_len = default_title_page_len;
 	conf->title_page_content = default_title_content;
 	conf->title_page_content_len = default_title_content_len;
+	memcpy(conf->salt, DEFAULT_CRED_HASHING_SALT, CRED_HASHING_SALT_SIZE);
+	conf->minimum_passwd_len = DEFAULT_MINIMUM_PASSWORD_LEN;
+	conf->passwd_specialchars = default_password_specialchars_needed;
 }
 
 #define CONFIG_HEADER "CBLOG1:"
@@ -45,9 +48,18 @@ layer_engine_to_str(default_datalayer_type),
 	return true;
 }
 
+bool config_int32t(char *conf, int32_t *value) {
+	char *invalid = NULL;
+	long int val = strtol(conf, &invalid, 10);
+	if (invalid != NULL) return false;
+	*value = (int32_t) val;
+	return true;
+}
+
 #define CONFIG_TEST(TEST, FIELD, LEN) do {if (strpartcmp(str, TEST) == STREQ) {str += strlen(TEST);if (*str != '\0' and *str != '\n') {conf->FIELD = str;conf->LEN = strlen(str);} return true;}} while(0)
 #define CONFIG_TEST_WOLEN(TEST, FIELD) do {if (strpartcmp(str, TEST) == STREQ) {str += strlen(TEST);if (*str != '\0' and *str != '\n') {conf->FIELD = str;} return true;}} while(0)
 #define CONFIG_TEST_OBJ(TEST, OBJ) do {if (strpartcmp(str, TEST) == STREQ) {str += strlen(TEST);if (*str != '\0' and *str != '\n') {OBJ = str;} return true;}} while(0)
+#define CONFIG_TEST_INT32_T(TEST, FIELD) do {if (strpartcmp(str, TEST) == STREQ) {str += strlen(TEST);if (*str != '\0' and *str != '\n') return config_int32t(str, conf->FIELD);}} while(0)
 
 bool config_record(struct appconfig *conf, char *str) {
 	CONFIG_TEST(CONFIG_APPNAME, appname, appnamelen);
