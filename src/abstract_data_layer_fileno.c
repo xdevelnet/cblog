@@ -92,15 +92,8 @@ struct fileno_context {
 
 #define OUCH_ERROR(errmsg, action) do {if (error) *error = errmsg; action;} while(0)
 
-pthread_mutex_t scanmutex;
-bool mutex_initialized = false;
 
 static bool initialize_fileno_context(struct data_layer *d, const char **error) { // d->addr, d->context
-	if (mutex_initialized == false) {
-		mutex_initialized = true;
-		pthread_mutex_init(&scanmutex, 0);
-	}
-
 	char *path = realpath(d->addr, NULL);
 	if (path == NULL) OUCH_ERROR("Request address for engine has not found", return false);
 	size_t realpathlen = strlen(path);
@@ -148,8 +141,6 @@ fail:
 }
 
 void deinitialize_engine_fileno(void *context) {
-	pthread_mutex_destroy(&scanmutex);
-
 	struct fileno_context *ret = context;
 	close(ret->dfd);
 	close(ret->datafd);
@@ -159,14 +150,17 @@ void deinitialize_engine_fileno(void *context) {
 	close(ret->rbac);
 }
 
-unix_epoch glob_from; // these variables should be protected with scanmutex
-unix_epoch glob_to;
-int glob_dirfd;
+struct fileno_scandir_pass {
+	unix_epoch from;
+	unix_epoch to;
+	int dirfd;
+};
 
-static int comparator(const struct dirent **d1, const struct dirent **d2) {
+static int comparator(const struct dirent **d1, const struct dirent **d2, void *pass) {
+	struct fileno_scandir_pass *fpass = pass;
 	struct stat s[2];
-	fstatat(glob_dirfd, (*d1)->d_name, s, 0);
-	fstatat(glob_dirfd, (*d2)->d_name, s + 1, 0);
+	fstatat(fpass->dirfd, (*d1)->d_name, s, 0);
+	fstatat(fpass->dirfd, (*d2)->d_name, s + 1, 0);
 
 	if (s[0].st_mtim.tv_sec == s[1].st_mtim.tv_sec and s[0].st_mtim.tv_nsec == s[1].st_mtim.tv_nsec) return 0;
 	if (abiggerb_timespec(s[0].st_mtim, s[1].st_mtim)) return 1;
@@ -181,16 +175,16 @@ static void scanfree(struct dirent **e, int amount) {
 }
 
 // This filter is NOT REENTRANT! Use scandir() with mutextes to make it thread-safe
-static int filter_fun(const struct dirent *d) {
+static int filter_fun(const struct dirent *d, void *pass) {
 	static const int keep = 1;
 	static const int away = 0;
 
-//	if (d->d_type != DT_REG) return away;
 	if (is_str_unsignedint(d->d_name) == false) return away;
+	struct fileno_scandir_pass *fpass = pass;
 	struct stat s;
-	fstatat(glob_dirfd, d->d_name, &s, 0);
-	if (s.st_mtim.tv_sec < glob_from.t) return away;
-	if (s.st_mtim.tv_sec > glob_to.t) return away;
+	fstatat(fpass->dirfd, d->d_name, &s, 0);
+	if (s.st_mtim.tv_sec < fpass->from.t) return away;
+	if (s.st_mtim.tv_sec > fpass->to.t) return away;
 	return keep;
 }
 
@@ -220,12 +214,8 @@ bool list_records_fileno(unsigned *amount,// Pointer that could be used for limi
 	} while(0);
 
 	struct dirent **dirent;
-	pthread_mutex_lock(&scanmutex);
-	glob_from = filter.from;
-	glob_to = filter.to;
-	glob_dirfd = scanfd;
-	int ret = scandir_r(scanaddr, &dirent, filter_fun, comparator);
-	pthread_mutex_unlock(&scanmutex);
+	struct fileno_scandir_pass fpass = {.from = filter.from, .to = filter.to, .dirfd = scanfd};
+	int ret = scandir_r(scanaddr, &dirent, filter_fun, comparator, &fpass);
 
 	unsigned limit = *amount; // 8 lines below could be refactored... Or now. IDK.
 	*amount = 0;
