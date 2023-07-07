@@ -1,7 +1,7 @@
 int scandir_r(const char *path, struct dirent ***res, int (*sel)(const struct dirent *), int (*cmp)(const struct dirent **, const struct dirent **)) {
 	DIR *d = opendir(path);
-	struct dirent *de, **names=0, **tmp;
-	size_t cnt=0, len=0;
+	struct dirent *de, **names= NULL;
+	size_t cnt=0, len= 0;
 	int old_errno = errno;
 
 	if (!d) return -1;
@@ -11,7 +11,7 @@ int scandir_r(const char *path, struct dirent ***res, int (*sel)(const struct di
 		if (cnt >= len) {
 			len = 2*len+1;
 			if (len > SIZE_MAX/sizeof *names) break;
-			tmp = realloc(names, len * sizeof *names);
+			struct dirent **tmp = realloc(names, len * sizeof *names);
 			if (!tmp) break;
 			names = tmp;
 		}
@@ -27,6 +27,7 @@ int scandir_r(const char *path, struct dirent ***res, int (*sel)(const struct di
 		free(names);
 		return -1;
 	}
+
 	errno = old_errno;
 
 	if (cmp) qsort(names, cnt, sizeof *names, (int (*)(const void *, const void *))cmp);

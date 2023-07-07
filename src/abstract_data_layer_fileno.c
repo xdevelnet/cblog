@@ -202,7 +202,6 @@ bool list_records_fileno(unsigned *amount,// Pointer that could be used for limi
 						void *context,
 						const char **error) {
 	struct fileno_context *f = context;
-	struct dirent **e;
 
 	int scanfd = f->dfd;
 	const char *scanaddr = f->addr;
@@ -220,25 +219,26 @@ bool list_records_fileno(unsigned *amount,// Pointer that could be used for limi
 		scanaddr = path;
 	} while(0);
 
+	struct dirent **dirent;
 	pthread_mutex_lock(&scanmutex);
 	glob_from = filter.from;
 	glob_to = filter.to;
 	glob_dirfd = scanfd;
-	int ret = scandir(scanaddr, &e, filter_fun, comparator);
+	int ret = scandir_r(scanaddr, &dirent, filter_fun, comparator);
 	pthread_mutex_unlock(&scanmutex);
 
 	unsigned limit = *amount; // 8 lines below could be refactored... Or now. IDK.
 	*amount = 0;
 
-	if (ret < 0) OUCH_ERROR(strerror(errno), scanfree(e, ret); return false);
-	if (ret == 0 or (unsigned) ret <= offset) {scanfree(e, ret); return true;}
+	if (ret < 0) OUCH_ERROR(strerror(errno), return false);
+	if (ret == 0 or (unsigned) ret <= offset) {scanfree(dirent, ret); return true;}
 
 	for (unsigned i = offset; i < (unsigned) ret and *amount < limit; i++) {
-		result_list[*amount] = strtoul(e[i]->d_name, NULL, 10);
+		result_list[*amount] = strtoul(dirent[i]->d_name, NULL, 10);
 		++*amount;
 	}
 
-	scanfree(e, ret);
+	scanfree(dirent, ret);
 	return true;
 }
 
