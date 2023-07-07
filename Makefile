@@ -6,8 +6,8 @@ all:
 	@echo make mon
 	@echo make demo
 fcgi:
-	cc --std=c99 src/fcgi_version.c -I ../ssb/src/ -O0 -g -o build/cblog_fcgi_debug -Wall -Wextra -Wno-unused-result -Wno-misleading-indentation -Wno-unused-parameter -lpthread -lfcgi
-	cc --std=c99 src/fcgi_version.c -I ../ssb/src/ -O3 -o build/cblog_fcgi -Wall -Wextra -Wno-unused-result -Wno-misleading-indentation -Wno-unused-parameter -lpthread -lfcgi
+	cc --std=c99 src/fcgi_version.c -I /usr/local/include -I ../ssb/src/ -L /usr/local/lib -O0 -g -o build/cblog_fcgi_debug -Wall -Wextra -Wno-unused-result -Wno-misleading-indentation -Wno-unused-parameter -lpthread -lfcgi
+	cc --std=c99 src/fcgi_version.c -I /usr/local/include -I ../ssb/src/ -L /usr/local/lib -O3 -o build/cblog_fcgi -Wall -Wextra -Wno-unused-result -Wno-misleading-indentation -Wno-unused-parameter -lpthread -lfcgi
 	strip build/cblog_fcgi
 mon:
 	cc ../mongoose/mongoose.c src/mon_version.c -I ../mongoose/ -I ../ssb/src/ -Wall -Wextra -O0 -g -o build/cblog_mon_debug -Wno-unused-result -Wno-misleading-indentation -Wno-unused-parameter

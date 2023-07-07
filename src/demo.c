@@ -1,6 +1,8 @@
 #define _DEFAULT_SOURCE
 #define _BSD_SOURCE
+#ifndef  __FreeBSD__
 #define _XOPEN_SOURCE 600
+#endif
 
 #define DATA_LAYER_FILENO
 #include <time.h>
