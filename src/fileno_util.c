@@ -1,5 +1,4 @@
 // this function acts just like regular scandir, but it has additional "pass" argument which will passed to filter and comparator functions
-
 int scandir_r(const char *path, struct dirent ***res, int (*filter)(const struct dirent *, void *), int (*compar)(const struct dirent **, const struct dirent **, void *), void *pass) {
 	DIR *d = opendir(path);
 	struct dirent *de, **names = NULL;
@@ -8,7 +7,7 @@ int scandir_r(const char *path, struct dirent ***res, int (*filter)(const struct
 
 	if (!d) return -1;
 
-	while ((errno = 0), (de = readdir(d))) {
+	while((errno = 0), (de = readdir(d))) {
 		if (filter && !filter(de, pass)) continue;
 		if (cnt >= len) {
 			len = 2 * len + 1;
@@ -25,7 +24,7 @@ int scandir_r(const char *path, struct dirent ***res, int (*filter)(const struct
 	closedir(d);
 
 	if (errno) {
-		if (names) while (cnt-- > 0) free(names[cnt]);
+		if (names) while(cnt-- > 0) free(names[cnt]);
 		free(names);
 		return -1;
 	}

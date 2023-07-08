@@ -83,7 +83,7 @@ bool validate_prefix(const char *email) {
 	bool special_char = false;
 	if (is_special_in_prefix(*email)) return false;
 
-	while (*email != '@') {
+	while(*email != '@') {
 		if (emb_isalpha(*email) == true or emb_isnumeric(*email)) {
 			special_char = false;
 			email++;
@@ -112,7 +112,7 @@ bool validate_domain(const char *domain) {
 	bool dash = false;
 	bool regular = false;
 
-	while (*domain != '\0') {
+	while(*domain != '\0') {
 		if (emb_isalpha(*domain) == true or emb_isnumeric(*domain)) {
 			dot = false;
 			dash = false;
@@ -171,7 +171,7 @@ bool validate_email_wo_regex(char *email) { // while this validator is not perfe
 //}
 
 char strpartcmp(char *str, char *part) {
-	while (1) {
+	while(1) {
 		if (*part == 0) return STREQ;
 		if (*(str++) != *(part++)) return STRNEQ;
 	}
@@ -179,7 +179,7 @@ char strpartcmp(char *str, char *part) {
 
 const unsigned char *utf8_check(const void *a){
 	const unsigned char *s = a;
-	while (*s) {
+	while(*s) {
 		if (*s < 0x80)
 			/* 0xxxxxxx */
 			s++;
@@ -367,7 +367,7 @@ void unsafe_rand(void *ptr, size_t width) {
 void urldecode2(char *dst, const char *src)
 {
 	char a, b;
-	while (*src) {
+	while(*src) {
 		if ((*src == '%') &&
 			((a = src[1]) && (b = src[2])) &&
 			(emb_is_hexadecimal(a) && emb_is_hexadecimal(b))) {
@@ -449,19 +449,16 @@ typedef int (*cmpfun)(const void *, const void *, void *);
 
 static inline int pntz(size_t p[2]) {
 	int r = ntz(p[0] - 1);
-	if(r != 0 || (r = 8*sizeof(size_t) + ntz(p[1])) != 8*sizeof(size_t)) {
-		return r;
-	}
+	if (r != 0 || (r = 8 * sizeof(size_t) + ntz(p[1])) != 8 * sizeof(size_t)) return r;
 	return 0;
 }
 
-static void cycle(size_t width, unsigned char* ar[], int n)
-{
+static void cycle(size_t width, unsigned char* ar[], int n) {
 	unsigned char tmp[256];
 	size_t l;
 	int i;
 
-	if(n < 2) {
+	if (n < 2) {
 		return;
 	}
 
@@ -469,7 +466,7 @@ static void cycle(size_t width, unsigned char* ar[], int n)
 	while(width) {
 		l = sizeof(tmp) < width ? sizeof(tmp) : width;
 		memcpy(ar[n], ar[0], l);
-		for(i = 0; i < n; i++) {
+		for (i = 0; i < n; i++) {
 			memcpy(ar[i], ar[i + 1], l);
 			ar[i] += l;
 		}
@@ -478,9 +475,8 @@ static void cycle(size_t width, unsigned char* ar[], int n)
 }
 
 /* shl() and shr() need n > 0 */
-static inline void shl(size_t p[2], int n)
-{
-	if(n >= (int) (8 * sizeof(size_t))) {
+static inline void shl(size_t p[2], int n) {
+	if (n >= (int) (8 * sizeof(size_t))) {
 		n -= (int) (8 * sizeof(size_t));
 		p[1] = p[0];
 		p[0] = 0;
@@ -490,9 +486,8 @@ static inline void shl(size_t p[2], int n)
 	p[0] <<= n;
 }
 
-static inline void shr(size_t p[2], int n)
-{
-	if(n >= (int) ( 8 * sizeof(size_t))) {
+static inline void shr(size_t p[2], int n) {
+	if (n >= (int) ( 8 * sizeof(size_t))) {
 		n -= (int) (8 * sizeof(size_t));
 		p[0] = p[1];
 		p[1] = 0;
@@ -502,8 +497,7 @@ static inline void shr(size_t p[2], int n)
 	p[1] >>= n;
 }
 
-static void sift(unsigned char *head, size_t width, cmpfun cmp, void *arg, int pshift, size_t lp[])
-{
+static void sift(unsigned char *head, size_t width, cmpfun cmp, void *arg, int pshift, size_t lp[]) {
 	unsigned char *rt, *lf;
 	unsigned char *ar[14 * sizeof(size_t) + 1];
 	int i = 1;
@@ -513,10 +507,10 @@ static void sift(unsigned char *head, size_t width, cmpfun cmp, void *arg, int p
 		rt = head - width;
 		lf = head - width - lp[pshift - 2];
 
-		if(cmp(ar[0], lf, arg) >= 0 && cmp(ar[0], rt, arg) >= 0) {
+		if (cmp(ar[0], lf, arg) >= 0 && cmp(ar[0], rt, arg) >= 0) {
 			break;
 		}
-		if(cmp(lf, rt, arg) >= 0) {
+		if (cmp(lf, rt, arg) >= 0) {
 			ar[i++] = lf;
 			head = lf;
 			pshift -= 1;
@@ -529,10 +523,8 @@ static void sift(unsigned char *head, size_t width, cmpfun cmp, void *arg, int p
 	cycle(width, ar, i);
 }
 
-static void trinkle(unsigned char *head, size_t width, cmpfun cmp, void *arg, size_t pp[2], int pshift, int trusty, size_t lp[])
-{
-	unsigned char *stepson,
-		*rt, *lf;
+static void trinkle(unsigned char *head, size_t width, cmpfun cmp, void *arg, size_t pp[2], int pshift, int trusty, size_t lp[]) {
+	unsigned char *stepson, *rt, *lf;
 	size_t p[2];
 	unsigned char *ar[14 * sizeof(size_t) + 1];
 	int i = 1;
@@ -544,13 +536,13 @@ static void trinkle(unsigned char *head, size_t width, cmpfun cmp, void *arg, si
 	ar[0] = head;
 	while(p[0] != 1 || p[1] != 0) {
 		stepson = head - lp[pshift];
-		if(cmp(stepson, ar[0], arg) <= 0) {
+		if (cmp(stepson, ar[0], arg) <= 0) {
 			break;
 		}
-		if(!trusty && pshift > 1) {
+		if (!trusty && pshift > 1) {
 			rt = head - width;
 			lf = head - width - lp[pshift - 2];
-			if(cmp(rt, stepson, arg) >= 0 || cmp(lf, stepson, arg) >= 0) {
+			if (cmp(rt, stepson, arg) >= 0 || cmp(lf, stepson, arg) >= 0) {
 				break;
 			}
 		}
@@ -562,15 +554,14 @@ static void trinkle(unsigned char *head, size_t width, cmpfun cmp, void *arg, si
 		pshift += trail;
 		trusty = 0;
 	}
-	if(!trusty) {
+	if (!trusty) {
 		cycle(width, ar, i);
 		sift(head, width, cmp, arg, pshift, lp);
 	}
 }
 
-void emb_qsort_r(void *base, size_t nel, size_t width, cmpfun cmp, void *arg)
-{
-	size_t lp[12*sizeof(size_t)];
+void emb_qsort_r(void *base, size_t nel, size_t width, cmpfun cmp, void *arg) {
+	size_t lp[ 12 * sizeof(size_t)];
 	size_t i, size = width * nel;
 	unsigned char *head, *high;
 	size_t p[2] = {1, 0};
@@ -583,21 +574,21 @@ void emb_qsort_r(void *base, size_t nel, size_t width, cmpfun cmp, void *arg)
 	high = head + size - width;
 
 	/* Precompute Leonardo numbers, scaled by element width */
-	for(lp[0]=lp[1]=width, i=2; (lp[i]=lp[i-2]+lp[i-1]+width) < size; i++);
+	for (lp[0]=lp[1]=width, i=2; (lp[i]=lp[i-2]+lp[i-1]+width) < size; i++);
 
 	while(head < high) {
-		if((p[0] & 3) == 3) {
+		if ((p[0] & 3) == 3) {
 			sift(head, width, cmp, arg, pshift, lp);
 			shr(p, 2);
 			pshift += 2;
 		} else {
-			if((ptrdiff_t) lp[pshift - 1] >= high - head) {
+			if ((ptrdiff_t) lp[pshift - 1] >= high - head) {
 				trinkle(head, width, cmp, arg, p, pshift, 0, lp);
 			} else {
 				sift(head, width, cmp, arg, pshift, lp);
 			}
 
-			if(pshift == 1) {
+			if (pshift == 1) {
 				shl(p, 1);
 				pshift = 0;
 			} else {
@@ -613,7 +604,7 @@ void emb_qsort_r(void *base, size_t nel, size_t width, cmpfun cmp, void *arg)
 	trinkle(head, width, cmp, arg, p, pshift, 0, lp);
 
 	while(pshift != 1 || p[0] != 1 || p[1] != 0) {
-		if(pshift <= 1) {
+		if (pshift <= 1) {
 			trail = pntz(p);
 			shr(p, trail);
 			pshift += trail;
@@ -630,7 +621,6 @@ void emb_qsort_r(void *base, size_t nel, size_t width, cmpfun cmp, void *arg)
 		head -= width;
 	}
 }
-
 #endif
 
 #endif // GUARD_UTIL_C
