@@ -80,6 +80,15 @@ static void cb(struct mg_connection *c, int ev, void *ev_data, void *fn_data) {
 				 .appcontext = fn_data,
 				 .method = http_determine_method(hm->method.ptr, hm->method.len)
 	};
+
+//	size_t i, max = sizeof(hm->headers) / sizeof(hm->headers[0]);
+//	printf("Request headers:\n");
+//	// Iterate over request headers, and print them one by one
+//	for (i = 0; i < max && hm->headers[i].name.len > 0; i++) {
+//		struct mg_str *kik = &hm->headers[i].name, *v = &hm->headers[i].value;
+//		printf("%.*s -> %.*s\n", (int) kik->len, kik->ptr, (int) v->len, v->ptr);
+//	}
+
 	app_request(a);
 	mg_http_write_chunk(c, "", 0);
 }

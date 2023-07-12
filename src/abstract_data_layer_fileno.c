@@ -651,37 +651,61 @@ bool insert_record_fileno(struct blog_record *r, void *context, const char **err
 	return true;
 }
 
-// TODO: This storage should be rewritten in order to use as much ram memory and possible
-//       and write to disk as rare as possible. Workaround is using ramdisk, duh.
-bool key_val_fileno(const char *key, void *value, ssize_t *size, void *context, const char **error) {
+static bool key_val_fileno_remove(char key[KEY_VAL_MAXKEYLEN], void *value, ssize_t *size, void *context, const char **error) {
+	UNUSED(value);
+	UNUSED(size);
+
 	struct fileno_context *f = context;
 
-	if (*size == 0) {
-		if (key == NULL) return false;
-		if (faccessat(f->keyvalfd, key, R_OK | W_OK, 0) == 0) return true;
-		return false;
-	}
+	if (unlinkat(f->keyvalfd, key, 0) == 0) return true;
+	return false;
+}
 
-	if (*size > 0) {
-		char name[NAME_MAX] = "session_";
-		if (key == NULL) {
-			randfilename(f, name, strizeof("session_"));
-		}
-		puts(name);
-		int fd = openat(f->keyvalfd, key, O_CREAT | O_RDWR | O_EXCL, DEFAULT_FILE_MODE);
-		if (fd < 0) {
-			if (errno == EEXIST) OUCH_ERROR(data_layer_error_data_already_exist, return false);
-			OUCH_ERROR(strerror(errno), return false);
-		}
-		ssize_t got = write(fd, value, (size_t) size);
-		close(fd);
-		if (got < *size) {
-			unlinkat(f->keyvalfd, key, 0);
-			OUCH_ERROR(data_layer_error_unable_to_process_kval, return false);
-		}
+static bool key_val_fileno_check(char key[KEY_VAL_MAXKEYLEN], void *value, ssize_t *size, void *context, const char **error) {
+	UNUSED(value);
+	UNUSED(size);
 
+	struct fileno_context *f = context;
+
+	if (key == NULL) return false;
+	int olderrno = errno;
+	errno = 0;
+	if (faccessat(f->keyvalfd, key, R_OK | W_OK, 0) == 0) {
 		return true;
 	}
+	if (errno != 0) *error = strerror(errno);
+	errno = olderrno;
+	return false;
+}
+
+static bool key_val_fileno_insert(char key[KEY_VAL_MAXKEYLEN], void *value, ssize_t *size, void *context, const char **error) {
+	struct fileno_context *f = context;
+
+	if (key[0] == '\0') {
+		size_t prefixlen = strlen(key + 1);
+		memmove(key, key + 1, prefixlen);
+		key[prefixlen] = '\0';
+		do {
+			randfilename(f, key, prefixlen);
+		} while (faccessat(f->keyvalfd, key, R_OK | W_OK, 0) == 0);
+	}
+	int fd = openat(f->keyvalfd, key, O_CREAT | O_RDWR | O_EXCL, DEFAULT_FILE_MODE);
+	if (fd < 0) {
+		if (errno == EEXIST) OUCH_ERROR(data_layer_error_data_already_exist, return false);
+		OUCH_ERROR(strerror(errno), return false);
+	}
+	ssize_t got = write(fd, value, (size_t) *size);
+	close(fd);
+	if (got < *size) {
+		unlinkat(f->keyvalfd, key, 0);
+		OUCH_ERROR(data_layer_error_unable_to_process_kval, return false);
+	}
+
+	return true;
+}
+
+bool key_val_fileno_read(char key[KEY_VAL_MAXKEYLEN], void *value, ssize_t *size, void *context, const char **error) {
+	struct fileno_context *f = context;
 
 	if (key == NULL) return false;
 	int fd = openat(f->keyvalfd, key,  O_RDWR , DEFAULT_FILE_MODE);
@@ -695,6 +719,18 @@ bool key_val_fileno(const char *key, void *value, ssize_t *size, void *context, 
 	*size = got;
 
 	return true;
+}
+
+// TODO: This storage should be rewritten in order to use as much ram memory and possible
+//       and write to disk as rare as possible. Workaround is using ramdisk, duh.
+bool key_val_fileno(char key[KEY_VAL_MAXKEYLEN], void *value, ssize_t *size, void *context, const char **error) {
+	if (size == NULL) return key_val_fileno_remove(key, value, size, context, error);
+
+	if (*size == 0) return key_val_fileno_check(key, value, size, context, error);
+
+	if (*size > 0) return key_val_fileno_insert(key, value, size, context, error);
+
+	return key_val_fileno_read(key, value, size, context, error);
 }
 
 bool user_fileno(struct usr *usr, struct user_action action, void *context, const char **error) {
@@ -739,8 +775,10 @@ bool user_fileno(struct usr *usr, struct user_action action, void *context, cons
 
 		return true;
 	} else {
-		snprintf(filename, sizeof(filename), "%"PRIu32, usr->id);
-		if (action.filter == BY_ID) target = filename;
+		if (action.filter == BY_ID) {
+			snprintf(filename, sizeof(filename), "%"PRIu32, usr->id);
+			target = filename;
+		}
 		else if (action.filter == BY_NAME) target = usr->display_name;
 		else if (action.filter == BY_EMAIL) target = usr->email;
 		else return false;

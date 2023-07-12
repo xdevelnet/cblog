@@ -343,6 +343,9 @@ static void title(reqargs a) {
 	};
 	struct list_filter filter = {.from.t = 0l, .to.t = 2147483647l}; // (unix_epoch) 0l, (unix_epoch) 2147483647l
 	const unsigned offset = 0;
+//	size_t cookiehdrlen = 0;
+//	const char *cookie_header = LOCATE_HEADER("Cookie", &cookiehdrlen);
+//	printf("cookie: %.*s\n", (int) cookiehdrlen, cookie_header);
 	selector(a, HOW_MANY_RECORDS_U_WANT_TO_SEE_ON_TITLEPAGE, offset, filter, &b, true);
 }
 
@@ -512,6 +515,7 @@ void user_login(reqargs a) {
 	char *nextbuffer = NULL;
 	APP_READ(post_data, &size);
 	if (size > 0) do {
+		post_data[size] = '\0';
 		urldecode2(post_data, post_data);
 		nextbuffer = post_data + size;
 		struct usr *u = (void *) nextbuffer;
@@ -537,14 +541,15 @@ void user_login(reqargs a) {
 		u->display_name[namelen] = '\0';
 		struct user_action action = {.operation = SELECT, .filter = BY_NAME};
 		const char *error;
-		bool result = user(u, action, l, &error);
-		if (result == false) {
+		char key[KEY_VAL_MAXKEYLEN] = "\0session_";
+		ssize_t keyval_size = sizeof(struct usr);
+		if (user(u, action, l, &error) == false or key_val(key, u, &keyval_size, l, &error) == false) {
 			out[TITLE_PAGE_PART] = error;
 			outsizes[TITLE_PAGE_PART] = strlen(error);
 			break;
 		}
 		login_headers_table[2] = cookie;
-		strcpy(cookie, "Set-Cookie: id=");
+		sprintf(cookie, "Set-Cookie: id=%s", key);
 		out[TITLE_PAGE_PART] = "Welcome!";
 		outsizes[TITLE_PAGE_PART] = strlen(out[TITLE_PAGE_PART]);
 	} while(0);
@@ -555,7 +560,6 @@ void user_login(reqargs a) {
 		if (e->record_size[i] < 0) APP_WRITE(out[-e->record_size[i]], outsizes[-e->record_size[i]]);
 		else APP_WRITE(&e->records[e->record_seek[i]], e->record_size[i]);
 	}
-
 }
 
 //#define IFREQ(page, fun) do{if(REQUEST_LEN==strizeof(page) and !memcmp(REQUEST, page, strizeof(page))) return fun(a);}while(0)

@@ -135,7 +135,9 @@ bool insert_record_dummy(struct blog_record *r, void *context, const char **erro
 	return false;
 }
 
-bool key_val_dummy(const char *key, void *value, ssize_t *size, void *context, const char **error) {
+#define KEY_VAL_MAXKEYLEN 255
+
+bool key_val_dummy(char *key, void *value, ssize_t *size, void *context, const char **error) {
 	UNUSED(key);
 	UNUSED(value);
 	UNUSED(size);
@@ -160,10 +162,13 @@ bool (*get_record)(struct blog_record *, unsigned , void *, const char **) = get
 // retrieve blog_record itself into empty structure. Non-empty structures are prohibited because of stack usage
 bool (*insert_record)(struct blog_record *, void *, const char **) = insert_record_dummy;
 // insert a blog_record
-bool (*key_val)(const char *, void *, ssize_t *, void *, const char **) = key_val_dummy;
+bool (*key_val)(char[KEY_VAL_MAXKEYLEN], void *, ssize_t *, void *, const char **) = key_val_dummy;
 // simple key-value storage. if size equals zero - we're checking if pair exists.
 // If size is greater than zero, we're attempting to insert a new record
 // If size is less than zero, we're attempting to retrieve a record
+// If size points to NULL pointer, we're removing a record
+// if key points to buffer that starts with \0, they key will be provided for API user, but user should
+// provide PREFIX that exist right behind this \0 byte. Prefix should be null-terminated string
 bool (*user)(struct usr *, struct user_action, void *, const char **) = user_dummy;
 
 enum datalayer_engines {

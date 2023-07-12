@@ -86,6 +86,7 @@ const char * const nginx_headers_table[] = {
 	"Accept-Encoding", "HTTP_ACCEPT_ENCODING",
 	"Connection", "HTTP_CONNECTION",
 	"Upgrade-Insecure-Requests", "HTTP_UPGRADE_INSECURE_REQUESTS",
+	"Cookie", "HTTP_COOKIE",
 	NULL, NULL
 };
 // Unfortunately, NGINX can't pass all http headers, only predefined.
@@ -132,11 +133,12 @@ void *worker(void *arg) {
 		app_write = write_fun_stub;
 		app_read = read_fun;
 		set_http_status_and_hdr = set_http_status_and_hdr_fun;
-//		char **ptr = request.envp;
-//		while(*ptr != NULL) {
-//			puts(*ptr);
-//			ptr++;
-//		}
+		char **ptr = request.envp;
+		putchar('\n');
+		while(*ptr != NULL) {
+			puts(*ptr);
+			ptr++;
+		}
 
 		const char *req = FCGX_GetParam("DOCUMENT_URI", request.envp);
 		const char *method = FCGX_GetParam("REQUEST_METHOD", request.envp);

@@ -17,7 +17,7 @@ bool insert_record_mysql(struct blog_record *r, void *context, const char **erro
 	return false;
 }
 
-bool key_val_mysql(const char *key, void *value, ssize_t *size, void *context, const char **error) {
+bool key_val_mysql(char key[KEY_VAL_MAXKEYLEN], void *value, ssize_t *size, void *context, const char **error) {
 	*error = data_layer_error_havent_implemented;
 	return false;
 }
