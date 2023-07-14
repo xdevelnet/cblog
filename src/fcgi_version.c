@@ -23,6 +23,7 @@
 #include <fcgiapp.h>
 #include <limits.h>
 #include <fcgios.h>
+#include <time.h>
 
 #include "app.c"
 #include "common.c"
@@ -92,13 +93,13 @@ const char * const nginx_headers_table[] = {
 // Unfortunately, NGINX can't pass all http headers, only predefined.
 // Also, even if you are going to use them, defaults aren't looks the same
 // as headers. For example, you may look for a "User-Agent", but under nginx that
-// would be HTTP_USER_AGENT. Currently I would like to know what would be the
+// would be HTTP_USER_AGENT. Currently, I would like to know what would be the
 // best solution to unify it's usage... Well, currently I can see only few options here:
 // 1. Edit nginx configuration and change these variables names to the names that matches
 //    header. For example, in /etc/nginx/fastcgi_params you can change CONTENT_TYPE
 //    to Content-Type
 // 2. Make a patch in nginx to allow pass headers as is, LOL
-// 3. Make a kludge in this software, like, correspondence headers_table, that silently changes
+// 3. Make a kludge in this software, like, correspondence default_headers_table, that silently changes
 //    string from User-Agent to HTTP_USER_AGENT just because of nginx
 // 4. Ask a application developer to support both (no, I definitely don't like it)
 static const char *locate_header_fun(const char *hdr, size_t *len, void *context) {
@@ -133,12 +134,12 @@ void *worker(void *arg) {
 		app_write = write_fun_stub;
 		app_read = read_fun;
 		set_http_status_and_hdr = set_http_status_and_hdr_fun;
-		char **ptr = request.envp;
-		putchar('\n');
-		while(*ptr != NULL) {
-			puts(*ptr);
-			ptr++;
-		}
+//		char **ptr = request.envp;
+//		putchar('\n');
+//		while(*ptr != NULL) {
+//			puts(*ptr);
+//			ptr++;
+//		}
 
 		const char *req = FCGX_GetParam("DOCUMENT_URI", request.envp);
 		const char *method = FCGX_GetParam("REQUEST_METHOD", request.envp);
@@ -166,6 +167,17 @@ void rfill(void *ptr, size_t size) {
 	if (got < 0) unsafe_rand(ptr, size);
 }
 
+void get_time(struct unix_epoch_with_ms *epoch) {
+	struct timespec spec;
+	clock_gettime(CLOCK_REALTIME, &spec);
+	epoch->epoch.t = spec.tv_sec;
+	epoch->milliseconds = spec.tv_nsec / 1000000;
+	if (epoch->milliseconds > 999) { // overflow protection just in case
+		epoch->milliseconds = 0;
+		epoch->epoch.t--;
+	}
+}
+
 int main(int argc, char **argv) {
 	fd = FCGX_OpenSocket(sockpath, 128);
 	randfd = open("/dev/urandom", O_RDONLY);
@@ -176,7 +188,7 @@ int main(int argc, char **argv) {
 	signal(SIGTERM, signal_handler); // even if it's still received. That's a todo.
 	locate_header = locate_header_fun;
 
-	struct appconfig config = {.r = rfill};
+	struct appconfig config = {.r = rfill, .t = get_time};
 	set_config_defaults(&config);
 	if (argc > 1) {
 		const char *error;

@@ -380,6 +380,13 @@ h4 {
   background: #303030;
 }
 
+input, button {
+  margin: 7px;
+  font-size: 22px;
+  color: #303030;
+  background: #fff;
+}
+
 /* ======================== MEDIA =========================== */
 
 @media (min-width: 768px) {
@@ -560,6 +567,13 @@ h4 {
 
   h1 {
     color: #fff;
+  }
+
+  input, button {
+    margin: 7px;
+    font-size: 22px;
+    background: #081524;
+    color: #ECECEC;
   }
 
   .tags-list a {

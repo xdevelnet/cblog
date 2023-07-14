@@ -12,6 +12,11 @@ typedef union {
 	char spare[8];
 } unix_epoch;
 
+struct unix_epoch_with_ms { // just like unix_epoch, but when we need more accuracy
+	unix_epoch epoch;
+	uint32_t milliseconds;
+};
+
 enum record_display {DISPLAY_INVALID, DISPLAY_SOURCE, DISPLAY_DATA, DISPLAY_BOTH};
 
 struct blog_record {

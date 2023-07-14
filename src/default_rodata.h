@@ -23,7 +23,10 @@ const char default_show_tags_content[] = "Displaying blog by tag";
 size_t default_show_tag_content_len = strizeof(default_show_tags_content);
 const bool default_password_specialchars_needed = false;
 
-const char default_form_html[] = "<form action=\"/user\" method=\"POST\"><input type=\"text\" placeholder=\"Enter Username\" name=\"name\" required><br><input type=\"password\" placeholder=\"Enter Password\" name=\"password\" required><br><button type=\"submit\">Login</button></form>";
+const char default_form_html[] = "<form action=\"/user\" method=\"POST\"><input type=\"text\" placeholder=\"Enter Username\" name=\"name\" required autofocus><br><input type=\"password\" placeholder=\"Enter Password\" name=\"password\" required><br><button type=\"submit\">Login</button></form>";
 size_t default_form_html_len = strizeof(default_form_html);
+
+const char default_welcome_after_login_title[] = "Welcome!";
+const char default_welcome_after_login[] = "You can visit <a href=\"/\">home page</a> or <a href=\"/user\">user panel</a>";
 
 #endif //CBLOG_DEFAULT_RODATA_H

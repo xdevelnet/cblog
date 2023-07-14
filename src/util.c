@@ -320,7 +320,14 @@ static bool is_str_unsignedint(const char *p) {
 	return true;
 }
 
-char *http_query_finder(const char *looking_for, const char *source, size_t source_len, size_t *result_len) {
+char *http_query_finder(const char *looking_for, const char *source, size_t source_len, size_t *result_len, bool cookie) {
+	// This function attempts to find a value by key (looking_for) in POST body or GET parameters or cookie body.
+	// The difference between POST body and cookie body is here:
+	// Cookie: key=value; onemorekey=value
+	// POST_BODY or GET parameters:
+	// key=value&onemorekey=value
+	//
+	// P.S.
 	// Ok, let's be honest here.
 	// this is not even fine implementation of such function
 	// it's just suits enough for this project and I don't want to
@@ -340,11 +347,12 @@ char *http_query_finder(const char *looking_for, const char *source, size_t sour
 	}
 
 	char *seek = find + sizeof(lf);
-	char *amp = strchr(seek, '&');
-	if (amp == NULL) {
+	char *delimiter;
+	if (cookie) delimiter = strchr(seek, ';'); else delimiter = strchr(seek, '&');
+	if (delimiter == NULL) {
 		*result_len = source + source_len - seek;
 	} else {
-		*result_len = amp - seek;
+		*result_len = delimiter - seek;
 	}
 
 	return find + sizeof(lf);

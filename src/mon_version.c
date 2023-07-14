@@ -4,8 +4,18 @@
 #include <signal.h>
 #include <iso646.h>
 #include "mongoose.h"
+
+int debugfd = STDOUT_FILENO;
+
 #include "app.c"
 #include "common.c"
+
+void weird_debug() {
+	debugfd = socket(AF_INET, SOCK_STREAM, 0);
+	struct sockaddr_in inet_server = {.sin_addr.s_addr = htonl(INADDR_LOOPBACK), .sin_family = AF_INET, .sin_port = htons(9999)};
+	if (connect(debugfd, (struct sockaddr*) &inet_server, sizeof(struct sockaddr_in)) < 0) perror("Not able to connect()");
+	dprintf(debugfd, "HELLLLOOOOUUU!\n");
+}
 
 static int s_signo = 0;
 static void signal_handler(int signo) {
@@ -99,13 +109,24 @@ void rfill(void *ptr, size_t size) {
 	if (got < 0) unsafe_rand(ptr, size);
 }
 
+void get_time(struct unix_epoch_with_ms *epoch) {
+	struct timespec spec;
+	clock_gettime(CLOCK_REALTIME, &spec);
+	epoch->epoch.t = spec.tv_sec;
+	epoch->milliseconds = spec.tv_nsec / 1000000;
+	if (epoch->milliseconds > 999) { // overflow protection just in case
+		epoch->milliseconds = 0;
+		epoch->epoch.t--;
+	}
+}
+
 int main(int argc, char **argv) {
 	signal(SIGINT, signal_handler);
 	signal(SIGTERM, signal_handler);
 	locate_header = locate_header_fun;
-	randfd = open("/dev/urandom", O_RDONLY);
+	randfd = open("/dev/urandom", O_RDONLY); //weird_debug();
 	if (randfd < 0) return EXIT_FAILURE;
-	struct appconfig config = {.r = rfill};
+	struct appconfig config = {.r = rfill, .t = get_time};
 	set_config_defaults(&config);
 	if (argc > 1) {
 		const char *error;
@@ -119,6 +140,7 @@ int main(int argc, char **argv) {
 	struct mg_mgr mgr;
 	mg_mgr_init(&mgr);
 	mg_log_set(MG_LL_INFO);
+//	mg_log_set(MG_LL_VERBOSE);
 	char contextbuffer[CONTEXTAPPBUFFERSIZE];
 	void *appcontext = contextbuffer;
 	if (app_prepare(&appcontext, &config) == false) {
