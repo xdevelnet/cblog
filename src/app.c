@@ -106,17 +106,17 @@ enum pages {
 http_methods http_determine_method(const char *ptr, size_t len) {
 	switch (len) {
 	case strizeof("GET"): // also case strizeof("PUT"):
-		if (memcmp(ptr, "GET", strizeof("GET")) == 0) return GET;
-		if (memcmp(ptr, "PUT", strizeof("PUT")) == 0) return PUT;
+		if (memcmp(ptr, "GET", strizeof("GET")) == STREQ) return GET;
+		if (memcmp(ptr, "PUT", strizeof("PUT")) == STREQ) return PUT;
 		return UNKNOWN;
 	case strizeof("POST"):
-		if (memcmp(ptr, "POST", strizeof("POST")) == 0) return POST;
+		if (memcmp(ptr, "POST", strizeof("POST")) == STREQ) return POST;
 		return UNKNOWN;
 	case strizeof("DELETE"):
-		if (memcmp(ptr, "DELETE", strizeof("DELETE")) == 0) return DELETE;
+		if (memcmp(ptr, "DELETE", strizeof("DELETE")) == STREQ) return DELETE;
 		return UNKNOWN;
 	case strizeof("PATCH"):
-		if (memcmp(ptr, "PATCH", strizeof("PATCH")) == 0) return PATCH;
+		if (memcmp(ptr, "PATCH", strizeof("PATCH")) == STREQ) return PATCH;
 		// fallthrough
 	default:
 		return UNKNOWN;
@@ -143,22 +143,22 @@ void headers_table_append(const char **headers_table, const char *header) {
 static inline int32_t template_tag_to_number(const char *name, int32_t length) {
 	switch (-length) {
 	case strizeof(TAGS_PAGE_NAME): // also USER_PAGE_NAME
-		if (memcmp(name, TAGS_PAGE_NAME, -length) == 0) return -TAGS_PAGE_PART;
-		if (memcmp(name, USER_PAGE_NAME, -length) == 0) return -USER_PAGE_PART;
+		if (memcmp(name, TAGS_PAGE_NAME, -length) == STREQ) return -TAGS_PAGE_PART;
+		if (memcmp(name, USER_PAGE_NAME, -length) == STREQ) return -USER_PAGE_PART;
 		break;
 	case strizeof(TITLE_PAGE_NAME):
-		if (memcmp(name, TITLE_PAGE_NAME, -length) == 0) return -TITLE_PAGE_PART;
+		if (memcmp(name, TITLE_PAGE_NAME, -length) == STREQ) return -TITLE_PAGE_PART;
 		break;
 	case strizeof(FOOTER_PAGE_NAME):
-		if (memcmp(name, FOOTER_PAGE_NAME, -length) == 0) return -FOOTER_PAGE_PART;
+		if (memcmp(name, FOOTER_PAGE_NAME, -length) == STREQ) return -FOOTER_PAGE_PART;
 		break;
 	case strizeof(CONTENT_PAGE_NAME):
-		if (memcmp(name, CONTENT_PAGE_NAME, -length) == 0) return -CONTENT_PAGE_PART;
+		if (memcmp(name, CONTENT_PAGE_NAME, -length) == STREQ) return -CONTENT_PAGE_PART;
 		break;
 	case strizeof(REPEATONE_PAGE_NAME):
 		if (memcmp(name, SITE_NAME, -length) == 0) return -SITENAME_PAGE_PART;
-		if (memcmp(name, REPEATONE_PAGE_NAME, -length) == 0) return -REPEATONE_PAGE_PART;
-		if (memcmp(name, REPEATTWO_PAGE_NAME, -length) == 0) return -REPEATTWO_PAGE_PART;
+		if (memcmp(name, REPEATONE_PAGE_NAME, -length) == STREQ) return -REPEATONE_PAGE_PART;
+		if (memcmp(name, REPEATTWO_PAGE_NAME, -length) == STREQ) return -REPEATTWO_PAGE_PART;
 		// fallthrough
 	default:
 		break;
@@ -250,7 +250,7 @@ bool is_user_legit(struct layer_context *l, struct usr *u) {
 	struct user_action action = {.filter = BY_ID, .operation = SELECT};
 	bool ret = user(&u2, action, l, NULL);
 	if (ret == false) return false;
-	if (memcmp(u->display_name, u2.display_name, sizeof(u2.display_name)) != 0 or memcmp(u->email, u2.email, sizeof(u2.email)) != 0) return false;
+	if (memcmp(u->display_name, u2.display_name, sizeof(u2.display_name)) != STREQ or memcmp(u->email, u2.email, sizeof(u2.email)) != STREQ) return false;
 	return true;
 }
 
@@ -661,6 +661,17 @@ void user_panel(reqargs a, struct usr *u) {
 	}
 }
 
+bool check_user_password(const void *password, size_t password_len, char password_hashed[SHA256_BLOCK_SIZE]) {
+	SHA256_CTX ctx;
+	sha256_init(&ctx);
+	sha256_update(&ctx, password, password_len);
+	BYTE buf[SHA256_BLOCK_SIZE];
+	sha256_final(&ctx, buf);
+	if (memcmp(buf, password_hashed, SHA256_BLOCK_SIZE) == STREQ) return true;
+
+	return false;
+}
+
 #define SETCOOKIEID "Set-Cookie: id="
 #define SESSION_KEY "session_"
 #define SMCOL_EXPIRES "; expires=Thu, 01 Jan 1970 00:00:00 GMT"
@@ -736,7 +747,7 @@ void user_login(reqargs a) {
 	APP_READ(post_data, &size);
 	if (size > 0) do {
 		post_data[size] = '\0';
-		urldecode2(post_data, post_data);
+		size = urldecode2(post_data, post_data) - post_data;
 		nextbuffer = post_data + size;
 		struct usr *u = (void *) nextbuffer;
 		freespace -= size;
@@ -762,9 +773,9 @@ void user_login(reqargs a) {
 		struct user_action action = {.operation = SELECT, .filter = BY_NAME};
 		char key[KEY_VAL_MAXKEYLEN] = "\0"SESSION_KEY;
 		ssize_t keyval_size = sizeof(struct usr);
-		if (user(u, action, l, &error) == false or key_val(key, u, &keyval_size, l, &error) == false) {
-			out[TITLE_PAGE_PART] = error;
-			outsizes[TITLE_PAGE_PART] = strlen(error);
+		if (user(u, action, l, NULL) == false or check_user_password(password, passwordlen, u->credentials) == false or key_val(key, u, &keyval_size, l, NULL) == false) {
+			out[TITLE_PAGE_PART] = data_layer_error_invalid_argument;
+			outsizes[TITLE_PAGE_PART] = strizeof(data_layer_error_invalid_argument);
 			break;
 		}
 
@@ -805,14 +816,14 @@ void user_logout(reqargs a) {
 	SET_HTTP_STATUS_AND_HDR(301, logout_headers_table);
 	APP_WRITECS("Redirecting: /");
 }
-//#define IFREQ(page, fun) do{if(REQUEST_LEN==strizeof(page) and !memcmp(REQUEST, page, strizeof(page))) return fun(a);}while(0)
+//#define IFREQ(page, fun) do{if(REQUEST_LEN==strizeof(page) and memcmp(REQUEST, page, strizeof(page)) == STREQ) return fun(a);}while(0)
 
 void app_request(reqargs a) {
 	if ((METHOD != GET and METHOD != POST) or REQUEST_LEN == 0 or REQUEST[0] != '/') return notfound(a);
 	if (REQUEST_LEN == 1 and REQUEST[0] == '/') return title(a);
-	if (REQUEST_LEN == strizeof("/tags") and !memcmp(REQUEST, "/tags", strizeof("/tags"))) return show_with_tags(a);
-	if (REQUEST_LEN == strizeof("/user") and !memcmp(REQUEST, "/user", strizeof("/user"))) return user_login(a);
-	if (REQUEST_LEN == strizeof("/logout") and !memcmp(REQUEST, "/logout", strizeof("/logout"))) return user_logout(a);
+	if (REQUEST_LEN == strizeof("/tags") and memcmp(REQUEST, "/tags", strizeof("/tags")) == STREQ) return show_with_tags(a);
+	if (REQUEST_LEN == strizeof("/user") and memcmp(REQUEST, "/user", strizeof("/user")) == STREQ) return user_login(a);
+	if (REQUEST_LEN == strizeof("/logout") and memcmp(REQUEST, "/logout", strizeof("/logout")) == STREQ) return user_logout(a);
 	return show_record(a, get_u32_from_end_of_string(REQUEST, REQUEST_LEN));
 }
 

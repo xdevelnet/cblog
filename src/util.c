@@ -372,7 +372,7 @@ void unsafe_rand(void *ptr, size_t width) {
 	}
 }
 
-void urldecode2(char *dst, const char *src)
+char *urldecode2(char *dst, const char *src)
 {
 	char a, b;
 	while(*src) {
@@ -400,7 +400,7 @@ void urldecode2(char *dst, const char *src)
 			*dst++ = *src++;
 		}
 	}
-	*dst++ = '\0';
+	return dst;
 }
 
 #ifdef __USE_GNU

@@ -334,7 +334,7 @@ bool parse_metadata(int fd, struct blog_record *r, const char **error) {
 	char *meta = map_whole_file_shared(fd, &(metalen), error);
 	if (meta == NULL) return false;
 
-	if (meta[metalen - 1] != '\n' or memcmp(meta, meta_header, strizeof(meta_header)) != 0) {
+	if (meta[metalen - 1] != '\n' or memcmp(meta, meta_header, strizeof(meta_header)) != STREQ) {
 		OUCH_ERROR(data_layer_error_metadata_corrupted, goto ohno;);
 	}
 
@@ -790,7 +790,7 @@ bool user_fileno(struct usr *usr, struct user_action action, void *context, cons
 		return false;
 	case SELECT:
 	{
-		int fd = openat(f->users, target, O_RDONLY, DEFAULT_FILE_MODE);
+		int fd = openat(f->users, target, O_RDONLY);
 		if (fd < 0) {
 			if (errno == ENOENT) OUCH_ERROR(data_layer_error_item_not_found, return false);
 			OUCH_ERROR(strerror(errno), return false);
@@ -803,7 +803,7 @@ bool user_fileno(struct usr *usr, struct user_action action, void *context, cons
 	}
 	case ALTER:
 	{ // YOU MUST PERFORM SELECT BEFORE CALLING ALTER
-		int fd = openat(f->users, target, O_RDWR, DEFAULT_FILE_MODE);
+		int fd = openat(f->users, target, O_RDWR);
 		if (fd < 0) {
 			if (errno == ENOENT) OUCH_ERROR(data_layer_error_item_not_found, return false);
 			OUCH_ERROR(strerror(errno), return false);

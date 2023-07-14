@@ -44,6 +44,15 @@ void rfill(void *ptr, size_t size) {
 	if (got < 0) unsafe_rand(ptr, size);
 }
 
+void make_credentials_from_password(const void *password, size_t password_len, char credentials[SHA256_BLOCK_SIZE]) {
+	printf("Password: %.*s", (int) password_len, (char *) password);
+	SHA256_CTX ctx;
+	sha256_init(&ctx);
+	sha256_update(&ctx, password, password_len);
+	void *creds = credentials;
+	sha256_final(&ctx, creds);
+}
+
 int main(int argc, char **argv) {
 	if (argc < 2) {
 		return printf("You should specify the path to testdata. Example:\n./demo demo_data\n");
@@ -126,12 +135,14 @@ int main(int argc, char **argv) {
 		.id = 1,
 		.display_name = "Kind admin",
 		.email = "dasdas@asdas.com",
-		.credentials = "DJASKODJASDHAS",
 		.status = ACTIVE,
 		.create_time.t = 981239128,
 		.approve_code = "12345",
 		.expiration.approve_code_expiration.t = 7897897,
 	};
+
+	make_credentials_from_password("HELLO!", strizeof("HELLO!"), u.credentials);
+
 	struct user_action action = {.operation = ADD};
 	if (user(&u, action, &con, &error) == false) return nop(&con, error);
 
