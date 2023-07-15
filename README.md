@@ -68,10 +68,13 @@ Application features:
 |Multiple template support|Done, but only one template is enabled|Abstracted in essb library that were written particularly for this project.<br />Two templates were already done|
 |Multiple L10n support|Done, but not enabled at all|Abstracted in tssb library that were written particularly for this project
 |Markdown pages|Partially done|When user makes new blog record, app may expect markdown format. If no html provided it will automatically transform markdown into html|
-|Tags support|Partially done|Tags design are already present in my templates. Tags are already present in fileno storage|
+|Tags support|Mostly done|Tags are displaying on top of each record, engine can show records that are filtered by tag, during adding new record new tag could be added if it's not exist|
 |CI<br />Pre-built packages,<br />Docker images|Planned|CI done only for subprojects (ssb)|
 |Tests|Partially done|Done only for one module|
-|Pages|Partially done|Title page with displaying multiple blog records, single record page, 404 page|
+|Pages|Mostly done|Title page with displaying multiple records, filter page with displaying multiple records by specific filter (currently tag filter is supported) with length limiter, single record page with displaying tags, 404 page. 500 page, user login page, logout, user panel page|
+|User management|Done|Users data are storing: user id, name, email, hashed password (called "credentials"), user creating time, approve code for email sending, status, time values depending on status. Checking and making user's credentials.|
+|RBACL (Role-Based Access Control Lists)|Planned|Still wondering how I should make it|
+|Sessions|Done, currently used mostly for storing user sessions|
 
 Supported data storage:
 
@@ -84,7 +87,7 @@ Supported data storage:
 
 External tools/software/references:
 
-|Tool|Description|
+|Tool/software|Description|
 |----|-----------|
 |Nginx|Web server that were mainly used with fastcgi library.<br />https://nginx.org/|
 |Fastcgi|Interface that allows to move out from CGI and achieve great performance. Unfortunately, original site is down, only archive left:<br />https://web.archive.org/web/20060221235908/http://fastcgi.com/ <br />Active development is here:<br />https://github.com/FastCGI-Archives/fcgi2|
