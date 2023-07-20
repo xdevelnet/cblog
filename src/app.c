@@ -356,7 +356,7 @@ static inline void selector_show_tag_processing(reqargs a, struct blog_record *b
 			APP_WRITE(b->title, b->titlelen);
 			APP_WRITE("-", strizeof("-"));
 			char buffer[CBL_UINT32_STR_MAX];
-			sprintf(buffer, "%lu", b->choosen_record);
+			sprintf(buffer, "%lu", b->chosen_record);
 			APP_WRITE(buffer, strlen(buffer));
 			APP_WRITE("\">", strizeof("\">"));
 		}
@@ -816,6 +816,53 @@ void user_logout(reqargs a) {
 	SET_HTTP_STATUS_AND_HDR(301, logout_headers_table);
 	APP_WRITECS("Redirecting: /");
 }
+
+static inline void editor_processing(reqargs a, int32_t tag, struct usr *u) {
+	struct appcontext *con = CONTEXT;
+//	essb *e = &con->templates;
+//	struct layer_context *l = &con->layer;
+	struct appconfig *config = con->config;
+
+	tag = -tag;
+
+	switch (tag) {
+	case SITENAME_PAGE_PART:
+		APP_WRITE(config->appname, config->appnamelen);
+		break;
+	case TITLE_PAGE_PART:
+		APP_WRITECS("Add/edit page/record");
+		break;
+	case CONTENT_PAGE_PART:
+		APP_WRITE(default_add_edit_form_html, strizeof(default_add_edit_form_html));
+		break;
+//	case USER_PAGE_PART:
+//		APP_WRITE(LI_AND_A_USER, strizeof(LI_AND_A_USER));
+//		APP_WRITE(u->display_name, strlen(u->display_name));
+//		APP_WRITE(LI_A_SUFF, strizeof(LI_A_SUFF));
+//		APP_WRITE(LI_AND_A_LOGOUT_FULL_STR, strizeof(LI_AND_A_LOGOUT_FULL_STR));
+//		break;
+	default:
+		return;
+	}
+}
+
+void page(reqargs a) {
+	struct appcontext *con = CONTEXT;
+	essb *e = &con->templates;
+//	struct layer_context *l = &con->layer;
+//	struct appconfig *config = con->config;
+
+	const char *headers_table[] = {default_header_nocache_1, default_header_nocache_2, default_header_nocache_3,
+	                               default_header_content_type, default_header_server_type, NULL};
+	SET_HTTP_STATUS_AND_HDR(200, headers_table);
+
+
+	for (unsigned i = 0; i < e->records_amount; i++) {
+		if (e->record_size[i] < 0) editor_processing(a, e->record_size[i], NULL);
+		else APP_WRITE(&e->records[e->record_seek[i]], e->record_size[i]);
+	}
+}
+
 //#define IFREQ(page, fun) do{if(REQUEST_LEN==strizeof(page) and memcmp(REQUEST, page, strizeof(page)) == STREQ) return fun(a);}while(0)
 
 void app_request(reqargs a) {
@@ -823,6 +870,7 @@ void app_request(reqargs a) {
 	if (REQUEST_LEN == 1 and REQUEST[0] == '/') return title(a);
 	if (REQUEST_LEN == strizeof("/tags") and memcmp(REQUEST, "/tags", strizeof("/tags")) == STREQ) return show_with_tags(a);
 	if (REQUEST_LEN == strizeof("/user") and memcmp(REQUEST, "/user", strizeof("/user")) == STREQ) return user_login(a);
+	if (REQUEST_LEN == strizeof("/page") and memcmp(REQUEST, "/page", strizeof("/page")) == STREQ) return page(a);
 	if (REQUEST_LEN == strizeof("/logout") and memcmp(REQUEST, "/logout", strizeof("/logout")) == STREQ) return user_logout(a);
 	return show_record(a, get_u32_from_end_of_string(REQUEST, REQUEST_LEN));
 }

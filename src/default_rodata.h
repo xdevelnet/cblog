@@ -26,6 +26,8 @@ const bool default_password_specialchars_needed = false;
 const char default_form_html[] = "<form action=\"/user\" method=\"POST\"><input type=\"text\" placeholder=\"Enter Username\" name=\"name\" required autofocus><br><input type=\"password\" placeholder=\"Enter Password\" name=\"password\" required><br><button type=\"submit\">Login</button></form>";
 size_t default_form_html_len = strizeof(default_form_html);
 
+const char default_add_edit_form_html[] = "<form action=\"/page\" method=\"post\" enctype=\"multipart/form-data\"><input type=\"text\" placeholder=\"Title\" name=\"title\" required autofocus><br><textarea id=\"txt\" name=\"data\" minlength=\"1\"></textarea><script>var simplemde = new SimpleMDE({ element: document.getElementById(\"txt\"), forceSync: true, spellChecker: false, tabSiz: 4});</script><br><button type=\"submit\">Send</button></form>";
+
 const char default_welcome_after_login_title[] = "Welcome!";
 const char default_welcome_after_login[] = "You can visit <a href=\"/\">home page</a> or <a href=\"/user\">user panel</a>";
 

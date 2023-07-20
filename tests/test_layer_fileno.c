@@ -23,15 +23,28 @@ static inline int rmrf(const char *path) {
 	return nftw(path, unlink_cb, 64, FTW_DEPTH | FTW_PHYS);
 }
 
+int randfd;
+void rfill(void *ptr, size_t size) {
+	ssize_t got = read(randfd, ptr, size);
+	if (got < 0) unsafe_rand(ptr, size);
+}
+
 #define TESTSETPATH "fileno_testset"
 
 int main() {
 	rmrf(TESTSETPATH);
 	mkdir(TESTSETPATH, 0777);
 
+	randfd = open("/dev/urandom", O_RDONLY);
+	if (randfd < 0) {
+		perror("Can open urandom");
+		return EXIT_FAILURE;
+	}
+
 	struct layer_context con;
+	struct data_layer d = {.e = ENGINE_FILENO, TESTSETPATH, .context = &con, .randfun = rfill};
 	const char *error;
-	if (initialize_engine(ENGINE_FILENO, TESTSETPATH, &con, &error) == false) {
+	if (initialize_engine(&d, &error) == false) {
 		printf("Failed to initialize engine: %s\n", error);
 		return EXIT_FAILURE;
 	}
@@ -111,7 +124,7 @@ int main() {
 	b.titlelen = strlen(b.title);
 	b.data = test_data2;
 	b.datalen = strizeof(test_data2);
-	b.display = DISPLAY_SOURCE;
+	b.display = DISPLAY_DATASOURCE;
 	b.tags = tags; // yes, I am attempting to use the same tags in order to test how they will be filled
 
 	if (insert_record(&b, &con, &error) == false) {
@@ -123,7 +136,8 @@ int main() {
 	unsigned amount = RLIM;
 	unsigned long list[RLIM];
 
-	if (list_records(&amount, list, 0, (unix_epoch) 0l, (unix_epoch) 2147483647l, &con, &error) == false) {
+	struct list_filter filter = {.from.t = 0l, .to.t = 2147483647l};
+	if (list_records(&amount, list, 0, filter, &con, &error) == false) {
 		printf("Failed list records! Error: %s\n", error);
 		return EXIT_FAILURE;
 	}

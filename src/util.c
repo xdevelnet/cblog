@@ -6,6 +6,7 @@
 #include <iso646.h>
 #include <stdint.h>
 #include <stddef.h>
+//#include <math.h>
 
 #if !defined strizeof
 #define strizeof(a) (sizeof(a)-1)
@@ -630,5 +631,41 @@ void emb_qsort_r(void *base, size_t nel, size_t width, cmpfun cmp, void *arg) {
 	}
 }
 #endif
+
+uint32_t uint_pow(uint32_t base, uint32_t exp) {
+	uint32_t result = 1;
+	while(exp) {
+		if (exp % 2) result *= base;
+		exp /= 2;
+		base *= base;
+	}
+	return result;
+}
+
+uint32_t dec_to_oct(uint32_t dec) {
+	uint32_t oct = 0, i = 1;
+
+	while(dec != 0) {
+		oct += (dec % 8) * i;
+		dec /= 8;
+		i *= 10;
+	}
+
+	return oct;
+}
+
+uint32_t oct_to_dec(uint32_t oct) {
+	uint32_t dec = 0, i = 0;
+
+	while(oct != 0) {
+		dec += (oct % 10) * uint_pow(8, i);
+		++i;
+		oct/=10;
+	}
+
+	i = 1;
+
+	return dec;
+}
 
 #endif // GUARD_UTIL_C

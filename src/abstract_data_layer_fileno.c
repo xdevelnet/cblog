@@ -296,13 +296,34 @@ static char *tag_processing(char *comma_separated_tags, struct blog_record *r) {
 }
 
 #define METADATA_VER "METADATA1"
-#define METADATA_FMT_WO_TAGS METADATA_VER "\ndisplay: %s\ntitle: %.*s\ndata: %s\ndatasource: %s\ncreation_unixepoch: %lu\n"
+#define METADATA_FMT_WO_TAGS METADATA_VER "\ndisplay: %s\nunix access: %03"PRIu32"\nuser id: %"PRIu32"\ngroup id: %"PRIu32"\ntitle: %.*s" \
+                                          "\ndata: %s\ndatasource: %s\ncreation_unixepoch: %lu\nmodificated_unixepoch: %lu\n"
 
-bool parse_metadata(int fd, struct blog_record *r, const char **error) {
+
+struct metadata_strings {
+	void *meta;
+	size_t metalen;
+
+	char *display;
+	char *unix_access;
+	char *user_id;
+	char *group_id;
+	char *title;
+	char *data;
+	char *datasource;
+	char *tags;
+	char *creation_unixepoch;
+	char *modificated_unixepoch;
+};
+
+bool parse_metadata(int fd, struct metadata_strings *meta_strings, const char **error) {
 	/* metadata format:
 	 *
 	 * METADATA1
 	 * display: source | data | both | none
+	 * unix access: object rights
+	 * user id: id of owner/creator of object
+	 * group id: id of group that file is belong to, might be 0 if not required
 	 * title: The actual title that will be displayed
 	 * data: filename_in_data_directory
 	 * datasource: filename_in_datasource_directory
@@ -320,99 +341,129 @@ bool parse_metadata(int fd, struct blog_record *r, const char **error) {
 
 	struct stat s;
 	if (fstat(fd, &s) < 0) OUCH_ERROR(strerror(errno), return false);
-	if (s.st_size < (ssize_t) strizeof(METADATA_FMT_WO_TAGS))  OUCH_ERROR(data_layer_error_metadata_corrupted, return false;);
+	if (s.st_size < (ssize_t) strizeof(METADATA_FMT_WO_TAGS)) OUCH_ERROR(data_layer_error_metadata_corrupted, return false);
 
 	const char meta_header[] = METADATA_VER;
 	const char meta_display[] = "\ndisplay: ";
+	const char meta_unix_access[] = "\nunix access: ";
+	const char meta_user_id[] = "\nuser id: ";
+	const char meta_group_id[] = "\ngroup id: ";
 	const char meta_title[] = "\ntitle: ";
 	const char meta_data[] = "\ndata: ";
 	const char meta_datasource[] = "\ndatasource: ";
 	const char meta_tags[] = "\ntags: ";
 	const char meta_creation_unixepoch[] = "\ncreation_unixepoch: ";
+	const char meta_modificated_unixepoch[] = "\nmodificated_unixepoch: ";
 
-	size_t metalen;
-	char *meta = map_whole_file_shared(fd, &(metalen), error);
-	if (meta == NULL) return false;
+	meta_strings->meta = map_whole_file_shared(fd, &(meta_strings->metalen), error);
+	if (meta_strings->meta == NULL) return false;
 
-	if (meta[metalen - 1] != '\n' or memcmp(meta, meta_header, strizeof(meta_header)) != STREQ) {
-		OUCH_ERROR(data_layer_error_metadata_corrupted, goto ohno;);
+	if (((char *) meta_strings->meta)[meta_strings->metalen - 1] != '\n' or memcmp(meta_strings->meta, meta_header, strizeof(meta_header)) != STREQ) {
+		OUCH_ERROR(data_layer_error_metadata_corrupted, return false);
 	}
 
-	char *display = util_memmem(meta, metalen, meta_display, strizeof(meta_display));
-	char *title = util_memmem(meta, metalen, meta_title, strizeof(meta_title));
-	char *data = util_memmem(meta, metalen, meta_data, strizeof(meta_data));
-	char *datasource = util_memmem(meta, metalen,  meta_datasource, strizeof(meta_datasource));
-	char *tags = util_memmem(meta, metalen, meta_tags, strizeof(meta_tags));
-	char *creation_unixepoch = util_memmem(meta, metalen, meta_creation_unixepoch, strizeof(meta_creation_unixepoch));
+	meta_strings->display = util_memmem(meta_strings->meta, meta_strings->metalen, meta_display, strizeof(meta_display));
+	meta_strings->unix_access = util_memmem(meta_strings->meta, meta_strings->metalen, meta_unix_access, strizeof(meta_unix_access));
+	meta_strings->user_id = util_memmem(meta_strings->meta, meta_strings->metalen, meta_user_id, strizeof(meta_user_id));
+	meta_strings->group_id = util_memmem(meta_strings->meta, meta_strings->metalen, meta_group_id, strizeof(meta_group_id));
+	meta_strings->title = util_memmem(meta_strings->meta, meta_strings->metalen, meta_title, strizeof(meta_title));
+	meta_strings->data = util_memmem(meta_strings->meta, meta_strings->metalen, meta_data, strizeof(meta_data));
+	meta_strings->datasource = util_memmem(meta_strings->meta, meta_strings->metalen, meta_datasource, strizeof(meta_datasource));
+	meta_strings->tags = util_memmem(meta_strings->meta, meta_strings->metalen, meta_tags, strizeof(meta_tags));
+	meta_strings->creation_unixepoch = util_memmem(meta_strings->meta, meta_strings->metalen, meta_creation_unixepoch, strizeof(meta_creation_unixepoch));
+	meta_strings->modificated_unixepoch = util_memmem(meta_strings->meta, meta_strings->metalen, meta_modificated_unixepoch, strizeof(meta_modificated_unixepoch));
 
-	if (display == NULL or
-		title == NULL or
-		data == NULL or
-		datasource == NULL or
-		tags == NULL or
-		creation_unixepoch == NULL
-		) OUCH_ERROR(data_layer_error_metadata_corrupted, goto ohno;);
+	if (meta_strings->display == NULL or
+		meta_strings->unix_access == NULL or
+		meta_strings->user_id == NULL or
+		meta_strings->group_id == NULL or
+		meta_strings->title == NULL or
+		meta_strings->data == NULL or
+		meta_strings->datasource == NULL or
+		meta_strings->tags == NULL or
+		meta_strings->creation_unixepoch == NULL or
+		meta_strings->modificated_unixepoch == NULL
+		) OUCH_ERROR(data_layer_error_metadata_corrupted, return false);
 
 
-	display += strizeof(meta_display);
-	title += strizeof(meta_title);
-	data += strizeof(meta_data);
-	datasource += strizeof(meta_datasource);
-	tags += strizeof(meta_tags);
-	creation_unixepoch += strizeof(meta_creation_unixepoch);
+	meta_strings->display += strizeof(meta_display);
+	meta_strings->unix_access += strizeof(meta_unix_access);
+	meta_strings->user_id += strizeof(meta_user_id);
+	meta_strings->group_id += strizeof(meta_group_id);
+	meta_strings->title += strizeof(meta_title);
+	meta_strings->data += strizeof(meta_data);
+	meta_strings->datasource += strizeof(meta_datasource);
+	meta_strings->tags += strizeof(meta_tags);
+	meta_strings->creation_unixepoch += strizeof(meta_creation_unixepoch);
+	meta_strings->modificated_unixepoch += strizeof(meta_modificated_unixepoch);
 
-	if (*display == '\n' or
-	*title == '\n' or
-	(*data == '\n' and *datasource == '\n') or
-	emb_isdigit(creation_unixepoch[0]) == false) OUCH_ERROR(data_layer_error_metadata_corrupted, goto ohno;);
+	if (meta_strings->display[0] == '\n' or
+		meta_strings->unix_access[0] == '\n' or
+		meta_strings->user_id[0] == '\n' or
+		meta_strings->group_id[0] == '\n' or
+		meta_strings->title[0] == '\n' or
+		(meta_strings->data[0] == '\n' and meta_strings->datasource[0] == '\n') or
+		emb_isdigit(meta_strings->creation_unixepoch[0]) == false or
+		emb_isdigit(meta_strings->modificated_unixepoch[0]) == false
+		) OUCH_ERROR(data_layer_error_metadata_corrupted, return false);
 
-	char *newline_fly = strchr(display, '\n');
-	r->display = parse_meta_display(display, newline_fly - display);
-	if (r->display == DISPLAY_INVALID) OUCH_ERROR(data_layer_error_metadata_corrupted, goto ohno;);
+	return true;
+}
 
-	newline_fly = strchr(title, '\n');
-	if (newline_fly == title) OUCH_ERROR(data_layer_error_metadata_corrupted, goto ohno;);
-	r->titlelen = newline_fly - title;
+bool retrieve_metadata(int fd, struct blog_record *r, const char **error) {
+	struct metadata_strings m = {.meta = NULL};
+	if (parse_metadata(fd, &m, error) == false) OUCH_ERROR(data_layer_error_metadata_corrupted, munmap(m.meta, m.metalen); return false);
 
-	if (r->stack_space < r->titlelen) OUCH_ERROR(data_layer_error_not_enough_stack_space, goto ohno;);
-	memcpy(r->stack, title, r->titlelen);
+	char *newline_fly = strchr(m.display, '\n');
+	r->display = parse_meta_display(m.display, newline_fly - m.display);
+	if (r->display == DISPLAY_INVALID) OUCH_ERROR(data_layer_error_metadata_corrupted, goto ohno);
+
+	r->rights.mode = (acl_mode) oct_to_dec(strtoul(m.unix_access, NULL, 10));
+	r->rights.user = (uint32_t) strtoul(m.user_id, NULL, 10);
+	r->rights.group = (uint32_t) strtoul(m.group_id, NULL, 10);
+
+	newline_fly = strchr(m.title, '\n');
+	if (newline_fly == m.title) OUCH_ERROR(data_layer_error_metadata_corrupted, goto ohno);
+	r->titlelen = newline_fly - m.title;
+
+	if (r->stack_space < r->titlelen) OUCH_ERROR(data_layer_error_not_enough_stack_space, goto ohno);
+	memcpy(r->stack, m.title, r->titlelen);
 	r->title = r->stack;
 	r->stack += r->titlelen;
 	r->stack_space -= r->titlelen;
 
-	if (*data != '\n') {
-		newline_fly = strchr(data, '\n');
-		r->datalen = newline_fly - data;
-		if (r->stack_space < r->datalen) OUCH_ERROR(data_layer_error_not_enough_stack_space, goto ohno;);
-		memcpy(r->stack, data, r->datalen);
+	if (m.data[0] != '\n') {
+		newline_fly = strchr(m.data, '\n');
+		r->datalen = newline_fly - m.data;
+		if (r->stack_space < r->datalen) OUCH_ERROR(data_layer_error_not_enough_stack_space, goto ohno);
+		memcpy(r->stack, m.data, r->datalen);
 		r->data = r->stack;
 		r->stack += r->datalen;
 		r->stack_space -= r->datalen;
 	}
 
-	if (*datasource != '\n') {
-		newline_fly = strchr(datasource, '\n');
-		r->datasourcelen = newline_fly - datasource;
-		if (r->stack_space < r->datasourcelen) OUCH_ERROR(data_layer_error_not_enough_stack_space, goto ohno;);
-		memcpy(r->stack, datasource, r->datasourcelen);
+	if (m.datasource[0] != '\n') {
+		newline_fly = strchr(m.datasource, '\n');
+		r->datasourcelen = newline_fly - m.datasource;
+		if (r->stack_space < r->datasourcelen) OUCH_ERROR(data_layer_error_not_enough_stack_space, goto ohno);
+		memcpy(r->stack, m.datasource, r->datasourcelen);
 		r->datasource = r->stack;
 		r->stack += r->datasourcelen;
 		r->stack_space -= r->datalen;
 	}
 
-	newline_fly = strchr(tags, '\n');
-	if (r->stack_space < (size_t) (newline_fly - tags)) OUCH_ERROR(data_layer_error_not_enough_stack_space, goto ohno;);
-	if (skip_spaces(tags) != newline_fly) tag_processing(tags, r);
+	newline_fly = strchr(m.tags, '\n');
+	if (r->stack_space < (size_t) (newline_fly - m.tags)) OUCH_ERROR(data_layer_error_not_enough_stack_space, goto ohno);
+	if (skip_spaces(m.tags) != newline_fly) tag_processing(m.tags, r);
 
-	r->creation_date.t = (time_t) strtoll(creation_unixepoch, NULL, 10);
+	r->creation_date.t = (time_t) strtoll(m.creation_unixepoch, NULL, 10);
+	r->modification_date.t = (time_t) strtoll(m.modificated_unixepoch, NULL, 10);
 
-	r->modification_date.t = s.st_mtim.tv_sec;
-
-	munmap(meta, metalen);
+	munmap(m.meta, m.metalen);
 	return true;
 
 	ohno:
-	munmap(meta, metalen);
+	munmap(m.meta, m.metalen);
 	return false;
 }
 
@@ -425,9 +476,9 @@ static bool get_record_fileno(struct blog_record *r, unsigned choosen_record, vo
 	int meta = openat(f->dfd, name, O_RDONLY);
 	if (meta < 0) OUCH_ERROR(strerror(errno), return false);
 
-	bool parse_result = parse_metadata(meta, r, error);
+	bool parse_result = retrieve_metadata(meta, r, error);
 	close(meta);
-	if (parse_result == false) return false;
+	if (parse_result == false) OUCH_ERROR(data_layer_error_metadata_corrupted, return false);
 
 	int fd[2] = {-1, -1};
 
@@ -449,7 +500,7 @@ static bool get_record_fileno(struct blog_record *r, unsigned choosen_record, vo
 		}
 	}
 
-	if (r->display == DISPLAY_BOTH or r->display == DISPLAY_SOURCE) {
+	if (r->display == DISPLAY_BOTH or r->display == DISPLAY_DATASOURCE) {
 		memcpy(name, r->datasource, r->datasourcelen);
 		name[r->datasourcelen] = '\0';
 		fd[1] = openat(f->datasourcefd, name, O_RDONLY);
@@ -469,7 +520,7 @@ static bool get_record_fileno(struct blog_record *r, unsigned choosen_record, vo
 
 	if (fd[0] < 0 and fd[1] < 0) return false;
 
-	r->choosen_record = choosen_record;
+	r->chosen_record = choosen_record;
 
 	return true;
 }
@@ -514,9 +565,21 @@ static void add_to_tag(const char *tag, struct fileno_context *f, struct blog_re
 	int dir = openat(f->tagsfd, tag, O_DIRECTORY | O_RDONLY);
 	// the main reason why I'm not checking return values is not because I don't care
 	// but because any subsequent call will easily fail
-	sprintf(r->stack, "%lu", r->choosen_record);
+	sprintf(r->stack, "%lu", r->chosen_record);
 	linkat(f->dfd, r->stack, dir, r->stack, 0);
 	close(dir);
+}
+
+void tag_writer(int fd, char **tags, struct fileno_context *f, struct blog_record *r) {
+	write(fd, "tags: ", strizeof("tags: "));
+	bool commaspace = false;
+	while(*tags) {
+		if (commaspace == true) {write(fd, ", ", 2);} else {commaspace = true;}
+		write(fd, *tags, strlen(*tags));
+		add_to_tag(*tags, f, r);
+		tags++;
+	}
+	write(fd, "\n", 1);
 }
 
 static bool flush_files(int meta, struct fileno_context *f, struct blog_record *r, const char **error) {
@@ -528,23 +591,22 @@ static bool flush_files(int meta, struct fileno_context *f, struct blog_record *
 
 	if (r->stack_space <  len + NAME_MAX) OUCH_ERROR(data_layer_error_not_enough_stack_space, return false);
 
-	int fd = -1;
-	int sfd = -1;
+	int fd, sfd;
 
 	char name2[NAME_MAX + 1];
 	strcpy(name2, name);
 
-	if (r->datalen > 0) while(1) {
+	while(1) {
 		randfilename(f, name, len);
 		fd = openat(f->datafd, name, O_RDWR | O_CREAT | O_EXCL, DEFAULT_FILE_MODE);
 		if (fd >= 0) break;
 		if (errno != EEXIST) OUCH_ERROR(strerror(errno), return false);
 	}
 
-	if (r->datasourcelen > 0 or r->display == DISPLAY_BOTH or r->display == DISPLAY_SOURCE) while(1) {
+	while(1) {
 		randfilename(f, name2, len);
 		sfd = openat(f->datasourcefd, name2, O_RDWR | O_CREAT | O_EXCL, DEFAULT_FILE_MODE);
-		if (fd >= 0) break;
+		if (sfd >= 0) break;
 		if (errno != EEXIST) {
 			close(fd);
 			unlinkat(f->datafd, name, 0);
@@ -552,30 +614,22 @@ static bool flush_files(int meta, struct fileno_context *f, struct blog_record *
 		}
 	}
 
-	// TODO: I want to rewrite somehow this ugly tag generation below
 	const char *display = display_enum_to_str(r->display);
 	dprintf(meta, METADATA_FMT_WO_TAGS,
 			display,
+			dec_to_oct(r->rights.mode ? r->rights.mode : ACL_DEFAULT_NEW_OBJECT_MODE),
+			r->rights.user,
+			r->rights.group,
 			r->titlelen, r->title,
 			name,
 			name2,
-			r->creation_date.t ? r->creation_date.t : time(NULL));
-	write(meta, "tags: ", strizeof("tags: "));
-	char **tags = r->tags;
-	bool commaspace = false;
-	while(*tags) {
-		if (commaspace == true) {write(meta, ", ", 2);} else {commaspace = true;}
-		write(meta, *tags, strlen(*tags));
-		add_to_tag(*tags, f, r);
-		tags++;
-	}
-	write(meta, "\n", 1);
+			r->creation_date.t ? r->creation_date.t : time(NULL),
+			r->modification_date.t ? r->modification_date.t : time(NULL));
+	tag_writer(meta, r->tags, f, r);
 	close(meta);
 
-	if ((r->display == DISPLAY_BOTH or r->display == DISPLAY_SOURCE) and r->datasourcelen == 0) {
-
-		// cblog is transforming markdown to html in the following case:
-		// Only markdown is provided, but displaying html is possible (html only or html+md)
+	if ((r->display == DISPLAY_BOTH or r->display == DISPLAY_DATASOURCE) and r->datasourcelen == 0) {
+		// cblog is transforming markdown to html when only markdown is provided, but displaying html is possible (html only or html+md)
 
 		write(fd, r->data, r->datalen);
 		md_html(r->data, r->datalen, markdown_output_process, &sfd, 0, 0);
@@ -585,15 +639,11 @@ static bool flush_files(int meta, struct fileno_context *f, struct blog_record *
 		return true;
 	}
 
-	if (r->datalen > 0) {
-		write(fd, r->data, r->datalen);
-		close(fd);
-	}
+	if (r->datalen > 0) write(fd, r->data, r->datalen);
+	close(fd);
 
-	if (r->datasourcelen > 0) {
-		write(sfd, r->datasource, r->datasourcelen);
-		close(sfd);
-	}
+	if (r->datasourcelen > 0) write(sfd, r->datasource, r->datasourcelen);
+	close(sfd);
 
 	return true;
 }
@@ -626,7 +676,7 @@ bool insert_record_fileno(struct blog_record *r, void *context, const char **err
 
 	int last_record_storage_fd = openat(f->dfd, fileno_last_record_file, O_RDWR | O_CREAT, DEFAULT_FILE_MODE);
 	char last_record_str[CBL_UINT32_STR_MAX];
-	if (last_prepare(last_record_storage_fd, last_record_str, &(r->choosen_record), error) == false) {
+	if (last_prepare(last_record_storage_fd, last_record_str, &(r->chosen_record), error) == false) {
 		close(last_record_storage_fd);
 		return false;
 	}
@@ -644,9 +694,134 @@ bool insert_record_fileno(struct blog_record *r, void *context, const char **err
 
 	lseek(last_record_storage_fd, 0, SEEK_SET);
 	ftruncate(last_record_storage_fd, 0);
-	int got = sprintf(last_record_str, "%lu", r->choosen_record + 1);
+	int got = sprintf(last_record_str, "%lu", r->chosen_record + 1);
 	write(last_record_storage_fd, last_record_str, (size_t) got);
 	close(last_record_storage_fd);
+
+	return true;
+}
+
+void special_markdown_case(int fd, struct blog_record *old, struct blog_record *r, struct fileno_context *f) {
+
+}
+
+#define METADATA_FMT_WITH_TAGS_LIMITED METADATA_VER "\ndisplay: %s\nunix access: %03"PRIu32"\nuser id: %"PRIu32"\ngroup id: %"PRIu32"\ntitle: %.*s" \
+                                          "\ndata: %.*s\ndatasource: %.*s\ncreation_unixepoch: %lu\nmodificated_unixepoch: %lu\ntags: %.*s\n"
+
+bool alter_record_fileno(struct blog_record *r, void *context, const char **error) {
+	// this is the most tricky function I ever had in this scope
+	// We're expecting at least one change: from title, from datasource or from data.
+	// In any case, we should open last-made metadata, map it to memory, parse, then we could write to new temporary
+	// metadata file. After all writing is complete, temporary becomes the new metadata, the old one should be deleted
+
+	struct fileno_context *f = context;
+
+	if (r->chosen_record == 0) OUCH_ERROR(data_layer_error_invalid_argument, return false);
+	if (r->datalen == 0 and r->datasourcelen == 0 and r->titlelen == 0) OUCH_ERROR(data_layer_error_invalid_argument, return false);
+
+	// It's hard to write to a same file where we're reading from, don't want to have any collision during that
+	char first_filename[NAME_MAX];
+	char second_filename[NAME_MAX];
+	sprintf(first_filename, "%lu", r->chosen_record);
+
+	int meta = openat(f->dfd, first_filename, O_RDONLY);
+	if (meta < 0) {
+		if (errno == ENOENT) OUCH_ERROR(data_layer_error_item_not_found, return false);
+		return false;
+	}
+
+	struct blog_record old;
+
+	struct metadata_strings m = {.meta = NULL};
+	if (parse_metadata(meta, &m, error) == false) {
+		close(meta);
+		OUCH_ERROR(data_layer_error_metadata_corrupted, munmap(m.meta, m.metalen); return false);
+	}
+	close(meta);
+
+	if (r->titlelen > 0) {
+		old.title = r->title;
+		old.titlelen = r->titlelen;
+	} else {
+		old.title = m.title;
+		old.titlelen = strchr(m.title, '\n') - m.title;
+	}
+	old.display = r->display ? r->display : parse_meta_display(m.display, strchr(m.display, '\n') - m.display);
+	if (old.display == DISPLAY_INVALID) OUCH_ERROR(data_layer_error_metadata_corrupted, munmap(m.meta, m.metalen); return false);
+	old.rights.mode = (acl_mode) strtoul(m.unix_access, NULL, 10); // we don't need octal/decimal conversion here
+	old.rights.user = (uint32_t) strtoul(m.user_id, NULL, 10);
+	old.rights.group = (uint32_t) strtoul(m.group_id, NULL, 10);
+	old.creation_date.t = (time_t) strtoll(m.creation_unixepoch, NULL, 10);
+	old.data = m.data;
+	old.datalen = strchr(m.data, '\n') - m.data;
+	old.datasource = m.datasource;
+	old.datasourcelen = strchr(m.datasource, '\n') - m.datasource;
+	char *tags = "";
+	size_t tagslen = 0;
+	if (skip_spaces(m.tags) != strchr(m.tags, '\n')) {
+		tags = skip_spaces(m.tags);
+		tagslen = strchr(tags, '\n') - tags;
+	}
+
+	sprintf(second_filename, "new_%lu\n", r->chosen_record);
+	meta = openat(f->dfd, second_filename, O_RDWR | O_CREAT | O_EXCL, DEFAULT_FILE_MODE);
+	if (meta < 0) OUCH_ERROR(data_layer_error_metadata_corrupted, munmap(m.meta, m.metalen); return false);
+
+	unlinkat(f->dfd, first_filename, 0);
+	renameat(f->dfd, second_filename, f->dfd, first_filename);
+
+	const char *display = display_enum_to_str(old.display);
+	dprintf(meta, METADATA_FMT_WITH_TAGS_LIMITED,
+			display,
+			old.rights.mode,
+			old.rights.user,
+			old.rights.group,
+			(int) old.titlelen, old.title,
+			(int) old.datalen, old.data,
+			(int) old.datasourcelen, old.datasource,
+			old.creation_date.t,
+			time(NULL),
+			(int) tagslen, tags);
+	close(meta);
+
+	if (r->datalen > 0) {
+		size_t len = strchr(m.data, '\n') - m.data;
+		memcpy(first_filename, m.data, len);
+		first_filename[len] = '\0';
+		int fd = openat(f->datafd, first_filename, O_RDWR);
+		if (fd >= 0) {
+			ftruncate(fd, 0);
+			write(fd, r->data, r->datalen);
+			close(fd);
+		}
+
+		if ((old.display == DISPLAY_BOTH or old.display == DISPLAY_DATASOURCE) and r->datasourcelen == 0) {
+			// special case for markdown processing
+			len = strchr(m.datasource, '\n') - m.datasource;
+			memcpy(first_filename, m.datasource, len);
+			first_filename[len] = '\0';
+			fd = openat(f->datasourcefd, first_filename, O_RDWR);
+			if (fd >= 0) {
+				ftruncate(fd, 0);
+				md_html(r->data, r->datalen, markdown_output_process, &fd, 0, 0);
+				close(fd);
+			}
+		}
+	}
+
+	if (r->datasourcelen > 0) {
+		size_t len = strchr(m.datasource, '\n') - m.datasource;
+		memcpy(first_filename, m.datasource, len);
+		first_filename[len] = '\0';
+		int fd = openat(f->datasourcefd, first_filename, O_RDWR);
+		if (fd >= 0) {
+			ftruncate(fd, 0);
+			write(fd, r->datasource, r->datasourcelen);
+			close(fd);
+		}
+	}
+
+	munmap(m.meta, m.metalen);
 
 	return true;
 }
@@ -658,6 +833,7 @@ static bool key_val_fileno_remove(char key[KEY_VAL_MAXKEYLEN], void *value, ssiz
 	struct fileno_context *f = context;
 
 	if (unlinkat(f->keyvalfd, key, 0) == 0) return true;
+	*error = strerror(errno);
 	return false;
 }
 

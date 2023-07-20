@@ -45,7 +45,6 @@ void rfill(void *ptr, size_t size) {
 }
 
 void make_credentials_from_password(const void *password, size_t password_len, char credentials[SHA256_BLOCK_SIZE]) {
-	printf("Password: %.*s", (int) password_len, (char *) password);
 	SHA256_CTX ctx;
 	sha256_init(&ctx);
 	sha256_update(&ctx, password, password_len);
@@ -78,11 +77,11 @@ int main(int argc, char **argv) {
 	char buffer[35250];
 
 	struct blog_record b[5] = {
-		{.stack = buffer, .stack_space = sizeof(buffer), .display = DISPLAY_SOURCE},
-		{.stack = buffer, .stack_space = sizeof(buffer), .display = DISPLAY_SOURCE},
-		{.stack = buffer, .stack_space = sizeof(buffer), .display = DISPLAY_SOURCE},
-		{.stack = buffer, .stack_space = sizeof(buffer), .display = DISPLAY_SOURCE},
-		{.stack = buffer, .stack_space = sizeof(buffer), .display = DISPLAY_SOURCE}
+		{.stack = buffer, .stack_space = sizeof(buffer), .display = DISPLAY_DATASOURCE},
+		{.stack = buffer, .stack_space = sizeof(buffer), .display = DISPLAY_DATASOURCE},
+		{.stack = buffer, .stack_space = sizeof(buffer), .display = DISPLAY_DATASOURCE},
+		{.stack = buffer, .stack_space = sizeof(buffer), .display = DISPLAY_DATASOURCE},
+		{.stack = buffer, .stack_space = sizeof(buffer), .display = DISPLAY_DATASOURCE}
 	};
 
 	char *tags0[] = {"life", NULL};
