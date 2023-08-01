@@ -82,9 +82,12 @@ struct layer_context {
 	uint32_t enough_space[14];
 }; // 14*4 byte context is probably enough for any engine needs
 
+enum sorting_seq {DESC = 0, ASC};
+
 struct list_filter {
 	unix_epoch from; // unixtime
 	unix_epoch to;
+	enum sorting_seq sort;
 	char **tags;
 };
 

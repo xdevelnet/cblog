@@ -178,9 +178,11 @@ char strpartcmp(char *str, char *part) {
 	}
 }
 
-const unsigned char *utf8_check(const void *a){
+const unsigned char *utf8_check(const void *a, size_t len){
 	const unsigned char *s = a;
-	while(*s) {
+//	while(*s) {
+	for (size_t i = 0; i < len; len++) {
+		if (*s == '\0') break;
 		if (*s < 0x80)
 			/* 0xxxxxxx */
 			s++;
@@ -375,6 +377,7 @@ void unsafe_rand(void *ptr, size_t width) {
 
 char *urldecode2(char *dst, const char *src)
 {
+	if (src == NULL or dst == NULL) return NULL;
 	char a, b;
 	while(*src) {
 		if ((*src == '%') &&

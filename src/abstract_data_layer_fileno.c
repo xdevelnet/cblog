@@ -153,6 +153,7 @@ void deinitialize_engine_fileno(void *context) {
 struct fileno_scandir_pass {
 	unix_epoch from;
 	unix_epoch to;
+	enum sorting_seq sort;
 	int dirfd;
 };
 
@@ -163,8 +164,14 @@ static int comparator(const struct dirent **d1, const struct dirent **d2, void *
 	fstatat(fpass->dirfd, (*d2)->d_name, s + 1, 0);
 
 	if (s[0].st_mtim.tv_sec == s[1].st_mtim.tv_sec and s[0].st_mtim.tv_nsec == s[1].st_mtim.tv_nsec) return 0;
-	if (abiggerb_timespec(s[0].st_mtim, s[1].st_mtim)) return 1;
-	return -1;
+
+	if (fpass->sort == ASC) {
+		if (abiggerb_timespec(s[0].st_mtim, s[1].st_mtim)) return 1;
+		return -1;
+	}
+
+	if (abiggerb_timespec(s[0].st_mtim, s[1].st_mtim)) return -1;
+	return 1;
 }
 
 static void scanfree(struct dirent **e, int amount) {
@@ -174,7 +181,7 @@ static void scanfree(struct dirent **e, int amount) {
 	free(e);
 }
 
-// This filter is NOT REENTRANT! Use scandir() with mutextes to make it thread-safe
+// This filter is REENTRANT 😍😍😍! Because we're using specific custom-mate scandir()!
 static int filter_fun(const struct dirent *d, void *pass) {
 	static const int keep = 1;
 	static const int away = 0;
@@ -188,7 +195,7 @@ static int filter_fun(const struct dirent *d, void *pass) {
 	return keep;
 }
 
-// SELECT record_id from records WHERE modified_time > from and modified_time < to LIMIT amount OFFSET offset sort by modified_time;
+// SELECT record_id from records WHERE modified_time > from and modified_time < to LIMIT amount OFFSET sort by modified_time;
 bool list_records_fileno(unsigned *amount,// Pointer that could be used for limiting amount of results in list. After executing places amount of results.
 						unsigned long *result_list, // Array that will be filled with results
 						unsigned offset,            // Skip some amount rows/records/results
@@ -214,7 +221,7 @@ bool list_records_fileno(unsigned *amount,// Pointer that could be used for limi
 	} while(0);
 
 	struct dirent **dirent;
-	struct fileno_scandir_pass fpass = {.from = filter.from, .to = filter.to, .dirfd = scanfd};
+	struct fileno_scandir_pass fpass = {.from = filter.from, .to = filter.to, .sort = filter.sort, .dirfd = scanfd};
 	int ret = scandir_r(scanaddr, &dirent, filter_fun, comparator, &fpass);
 
 	unsigned limit = *amount; // 8 lines below could be refactored... Or now. IDK.
@@ -272,7 +279,13 @@ static size_t taglen(const char *str) {
 }
 
 static char *tag_processing(char *comma_separated_tags, struct blog_record *r) {
-	size_t tags_amount = char_occurences(comma_separated_tags, ',') + 1;
+	size_t tags_amount;
+	if (comma_separated_tags[0] == '\n') {
+		tags_amount = 0;
+	} else {
+		tags_amount = char_occurences(comma_separated_tags, ',') + 1;
+	}
+
 	size_t stack_ptrs_space = sizeof(void *) * (tags_amount + 1);
 	char *put = (char *) r->stack + stack_ptrs_space;
 	r->tags = r->stack;
@@ -380,7 +393,7 @@ bool parse_metadata(int fd, struct metadata_strings *meta_strings, const char **
 		meta_strings->title == NULL or
 		meta_strings->data == NULL or
 		meta_strings->datasource == NULL or
-		meta_strings->tags == NULL or
+//		meta_strings->tags == NULL or
 		meta_strings->creation_unixepoch == NULL or
 		meta_strings->modificated_unixepoch == NULL
 		) OUCH_ERROR(data_layer_error_metadata_corrupted, return false);
@@ -572,6 +585,10 @@ static void add_to_tag(const char *tag, struct fileno_context *f, struct blog_re
 
 void tag_writer(int fd, char **tags, struct fileno_context *f, struct blog_record *r) {
 	write(fd, "tags: ", strizeof("tags: "));
+	if (tags == NULL) {
+		write(fd, "\n", 1);
+		return;
+	}
 	bool commaspace = false;
 	while(*tags) {
 		if (commaspace == true) {write(fd, ", ", 2);} else {commaspace = true;}
@@ -589,7 +606,7 @@ static bool flush_files(int meta, struct fileno_context *f, struct blog_record *
 	normalize_filename(name);
 	size_t len = strlen(name);
 
-	if (r->stack_space <  len + NAME_MAX) OUCH_ERROR(data_layer_error_not_enough_stack_space, return false);
+//	if (r->stack_space <  len + NAME_MAX) OUCH_ERROR(data_layer_error_not_enough_stack_space, return false);
 
 	int fd, sfd;
 
@@ -648,7 +665,7 @@ static bool flush_files(int meta, struct fileno_context *f, struct blog_record *
 	return true;
 }
 
-static bool last_prepare(int fd, char str[CBL_UINT32_STR_MAX], unsigned long *val, const char **error) {
+static bool last_prepare(int fd, char str[CBL_UINT32_STR_MAX + 1], unsigned long *val, const char **error) {
 	ssize_t got;
 
 	if (fd < 0 or (got = read(fd, str, CBL_UINT32_STR_MAX)) < 0) OUCH_ERROR(strerror(errno), return false);
@@ -656,6 +673,7 @@ static bool last_prepare(int fd, char str[CBL_UINT32_STR_MAX], unsigned long *va
 		if (emb_isdigit(str[0]) == false) OUCH_ERROR(data_layer_error_metadata_corrupted, return false);
 		str[got] = '\0';
 		*val = strtoul(str, NULL, 10);
+		sprintf(str, "%lu", *val);
 		return true;
 	}
 
@@ -671,11 +689,11 @@ bool insert_record_fileno(struct blog_record *r, void *context, const char **err
 
 	if (r->titlelen > NAME_MAX or r->titlelen == 0) OUCH_ERROR(data_layer_error_invalid_argument, return false);
 	if (display_enum_to_str(r->display) == NULL) OUCH_ERROR(data_layer_error_invalid_argument, return false);
-	if (utf8_check(r->title) != NULL) OUCH_ERROR(data_layer_error_invalid_argument_utf8, return false);
+	if (utf8_check(r->title, r->titlelen) != NULL) OUCH_ERROR(data_layer_error_invalid_argument_utf8, return false);
 	if (r->datalen == 0 and r->datasourcelen == 0) OUCH_ERROR(data_layer_error_invalid_argument, return false);
 
 	int last_record_storage_fd = openat(f->dfd, fileno_last_record_file, O_RDWR | O_CREAT, DEFAULT_FILE_MODE);
-	char last_record_str[CBL_UINT32_STR_MAX];
+	char last_record_str[CBL_UINT32_STR_MAX + 1];
 	if (last_prepare(last_record_storage_fd, last_record_str, &(r->chosen_record), error) == false) {
 		close(last_record_storage_fd);
 		return false;
@@ -699,10 +717,6 @@ bool insert_record_fileno(struct blog_record *r, void *context, const char **err
 	close(last_record_storage_fd);
 
 	return true;
-}
-
-void special_markdown_case(int fd, struct blog_record *old, struct blog_record *r, struct fileno_context *f) {
-
 }
 
 #define METADATA_FMT_WITH_TAGS_LIMITED METADATA_VER "\ndisplay: %s\nunix access: %03"PRIu32"\nuser id: %"PRIu32"\ngroup id: %"PRIu32"\ntitle: %.*s" \

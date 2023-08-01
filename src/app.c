@@ -74,6 +74,8 @@ void (*app_read) (void *, unsigned long *, void *);
 const char default_header_content_type[] = "Content-Type: text/html;charset=utf-8";
 const char default_header_server_type[] = "Server: cblog app operator";
 const char default_header_location_slash[] = "Location: /";
+const char default_header_location_user[] = "Location: /user";
+const char default_header_location_page[] = "Location: /page";
 const char default_header_nocache_1[] = "Cache-Control: no-cache, no-store, must-revalidate";
 const char default_header_nocache_2[] = "Pragma: no-cache";
 const char default_header_nocache_3[] = "Expires: 0";
@@ -456,7 +458,7 @@ static void title(reqargs a) {
 		.datasource = config->title_page_content,
 		.datasourcelen = config->title_page_content_len,
 	};
-	struct list_filter filter = {.from.t = 0l, .to.t = 2147483647l}; // (unix_epoch) 0l, (unix_epoch) 2147483647l
+	struct list_filter filter = {.from.t = 0l, .to.t = 2147483647l, .sort = DESC}; // (unix_epoch) 0l, (unix_epoch) 2147483647l
 	const unsigned offset = 0;
 	selector(a, HOW_MANY_RECORDS_U_WANT_TO_SEE_ON_TITLEPAGE, offset, filter, &b, true);
 }
@@ -512,6 +514,7 @@ static inline void record_show_tag_processing(reqargs a, int32_t tag, struct blo
 	case TAGS_PAGE_PART:
 	{
 		char **tags = b.tags;
+		if (tags == NULL) break;
 		while(*tags) {
 			size_t taglen = strlen(*tags);
 			APP_WRITE(LI_AND_A_TAGS_PREF, strizeof(LI_AND_A_TAGS_PREF));
@@ -568,7 +571,7 @@ static void show_record(reqargs a, uint32_t record) {
 }
 
 static bool minimum_passwd_requirements(char *password, size_t passwd_minlen, bool passwd_specialchar) {
-	if (utf8_check(password) != NULL) return false;
+	if (utf8_check(password, strlen(password)) != NULL) return false;
 	size_t passwd_len = 0;
 	bool passwd_specialchar_presence = false;
 
@@ -713,7 +716,7 @@ void user_login(reqargs a) {
 			sprintf(cookie, "Set-Cookie: id=%s%s", key, SMCOL_EXPIRES);
 			headers_table_append(headers_table, cookie);
 			headers_table_append(headers_table, default_header_location_slash);
-			SET_HTTP_STATUS_AND_HDR(301, headers_table);
+			SET_HTTP_STATUS_AND_HDR(302, headers_table);
 			APP_WRITECS("Redirecting: /");
 			return;
 		}
@@ -736,8 +739,10 @@ void user_login(reqargs a) {
 
 	if (user_logged_in) {
 		headers_table_append(headers_table, default_header_location_slash);
-		SET_HTTP_STATUS_AND_HDR(301, headers_table);
+		SET_HTTP_STATUS_AND_HDR(302, headers_table);
 		APP_WRITECS("Redirecting: /");
+
+		return;
 	}
 
 	size_t freespace = CONTEXTAPPBUFFERSIZE - (con->freebuffer - (char *) con);
@@ -753,14 +758,14 @@ void user_login(reqargs a) {
 		freespace -= size;
 		if (freespace < sizeof(struct usr)) return internal_server_error(a, data_layer_error_not_enough_stack_space);
 		size_t namelen;
-		char *name = http_query_finder("name", con->freebuffer, size, &namelen, false);
+		char *name = http_query_finder("name", post_data, size, &namelen, false);
 		if (name == NULL or namelen >= sizeof(u->display_name)) {
 			out[TITLE_PAGE_PART] = data_layer_error_invalid_argument;
 			outsizes[TITLE_PAGE_PART] = strizeof(data_layer_error_invalid_argument);
 			break;
 		}
 		size_t passwordlen;
-		char *password = http_query_finder("password", con->freebuffer, size, &passwordlen, false);
+		char *password = http_query_finder("password", post_data, size, &passwordlen, false);
 		if (password == NULL) {
 			out[TITLE_PAGE_PART] = data_layer_error_invalid_argument;
 			outsizes[TITLE_PAGE_PART] = strizeof(data_layer_error_invalid_argument);
@@ -813,11 +818,11 @@ void user_logout(reqargs a) {
 		headers_table_append(logout_headers_table, cookie);
 	}
 
-	SET_HTTP_STATUS_AND_HDR(301, logout_headers_table);
+	SET_HTTP_STATUS_AND_HDR(302, logout_headers_table);
 	APP_WRITECS("Redirecting: /");
 }
 
-static inline void editor_processing(reqargs a, int32_t tag, struct usr *u) {
+static inline void editor_processing(reqargs a, int32_t tag, struct usr *u, char *error, size_t errorlen) {
 	struct appcontext *con = CONTEXT;
 //	essb *e = &con->templates;
 //	struct layer_context *l = &con->layer;
@@ -833,14 +838,19 @@ static inline void editor_processing(reqargs a, int32_t tag, struct usr *u) {
 		APP_WRITECS("Add/edit page/record");
 		break;
 	case CONTENT_PAGE_PART:
+		if (error != NULL and errorlen > 0) {
+			APP_WRITECS("Error: ");
+			APP_WRITE(error, errorlen);
+			APP_WRITECS("<br><br>");
+		}
 		APP_WRITE(default_add_edit_form_html, strizeof(default_add_edit_form_html));
 		break;
-//	case USER_PAGE_PART:
-//		APP_WRITE(LI_AND_A_USER, strizeof(LI_AND_A_USER));
-//		APP_WRITE(u->display_name, strlen(u->display_name));
-//		APP_WRITE(LI_A_SUFF, strizeof(LI_A_SUFF));
-//		APP_WRITE(LI_AND_A_LOGOUT_FULL_STR, strizeof(LI_AND_A_LOGOUT_FULL_STR));
-//		break;
+	case USER_PAGE_PART:
+		APP_WRITE(LI_AND_A_USER, strizeof(LI_AND_A_USER));
+		APP_WRITE(u->display_name, strlen(u->display_name));
+		APP_WRITE(LI_A_SUFF, strizeof(LI_A_SUFF));
+		APP_WRITE(LI_AND_A_LOGOUT_FULL_STR, strizeof(LI_AND_A_LOGOUT_FULL_STR));
+		break;
 	default:
 		return;
 	}
@@ -849,18 +859,105 @@ static inline void editor_processing(reqargs a, int32_t tag, struct usr *u) {
 void page(reqargs a) {
 	struct appcontext *con = CONTEXT;
 	essb *e = &con->templates;
-//	struct layer_context *l = &con->layer;
+	struct layer_context *l = &con->layer;
 //	struct appconfig *config = con->config;
 
 	const char *headers_table[] = {default_header_nocache_1, default_header_nocache_2, default_header_nocache_3,
-	                               default_header_content_type, default_header_server_type, NULL};
-	SET_HTTP_STATUS_AND_HDR(200, headers_table);
+                                   default_header_content_type, default_header_server_type, NULL, NULL, NULL};
 
+	char cookie[sizeof(SETCOOKIEID SMCOL_EXPIRES) + KEY_VAL_MAXKEYLEN];
 
-	for (unsigned i = 0; i < e->records_amount; i++) {
-		if (e->record_size[i] < 0) editor_processing(a, e->record_size[i], NULL);
-		else APP_WRITE(&e->records[e->record_seek[i]], e->record_size[i]);
+	bool user_logged_in = false;
+	struct usr logged_in_user;
+	do{
+		char key[KEY_VAL_MAXKEYLEN];
+		if (find_cookie_existence(a, "id", key) == 0) break;
+
+		ssize_t size = - ((ssize_t) sizeof(logged_in_user));
+		bool ret = key_val(key, &logged_in_user, &size, l, NULL);
+		if (ret == false or is_user_legit(l, &logged_in_user) == false) {
+			sprintf(cookie, "Set-Cookie: id=%s%s", key, SMCOL_EXPIRES);
+			headers_table_append(headers_table, cookie);
+			headers_table_append(headers_table, default_header_location_user);
+			SET_HTTP_STATUS_AND_HDR(302, headers_table);
+			APP_WRITECS("Redirecting: /user");
+			return;
+		}
+
+		user_logged_in = true;
+	} while(0);
+
+	if (user_logged_in == false) {
+		headers_table_append(headers_table, default_header_location_user);
+		SET_HTTP_STATUS_AND_HDR(302, headers_table);
+		APP_WRITECS("Redirecting: /user");
+		return;
 	}
+
+	size_t freespace = CONTEXTAPPBUFFERSIZE - (con->freebuffer - (char *) con);
+	char *input_data = con->freebuffer;
+
+	if (METHOD == GET) {
+		SET_HTTP_STATUS_AND_HDR(200, headers_table);
+		size_t size = 0;
+		char *find = http_query_finder("error", QUERY, QUERY_LEN, &size, false);
+		memcpy(input_data, find, size);
+		input_data[size] = '\0';
+		size = urldecode2(input_data, input_data) - input_data;
+
+		for (unsigned i = 0; i < e->records_amount; i++) {
+			if (e->record_size[i] < 0) editor_processing(a, e->record_size[i], &logged_in_user, input_data, size);
+			else APP_WRITE(&e->records[e->record_seek[i]], e->record_size[i]);
+		}
+
+		return;
+	}
+
+	size_t size = freespace;
+	APP_READ(input_data, &size);
+
+	if (size == 0) {
+		headers_table_append(headers_table, default_header_location_page);
+		SET_HTTP_STATUS_AND_HDR(302, headers_table);
+		APP_WRITECS("Redirecting: /page");
+		return;
+	}
+
+	input_data[size] = '\0';
+	size = urldecode2(input_data, input_data) - input_data;
+	input_data[size] = '\0';
+
+	size_t titlelen;
+	char *title = http_query_finder("title", input_data, size, &titlelen, false);
+
+	size_t datalen;
+	char *data = http_query_finder("data", input_data, size, &datalen, false);
+
+	if (title == NULL or data == NULL) {
+		headers_table_append(headers_table, default_header_location_page);
+		SET_HTTP_STATUS_AND_HDR(302, headers_table);
+		APP_WRITECS("Redirecting: /page");
+		return;
+	}
+
+	struct blog_record b = {.title = title, .titlelen = titlelen, .data = data, .datalen = datalen, .display = DISPLAY_DATASOURCE};
+	const char *error;
+	bool result = insert_record(&b, l, &error);
+	char strhdr[200];
+	if (result == false) {
+		printf("error: %s\n", error);
+		snprintf(strhdr, sizeof(strhdr), "Location: /page?error=%s", error);
+
+		headers_table_append(headers_table, strhdr);
+		SET_HTTP_STATUS_AND_HDR(302, headers_table);
+		APP_WRITECS("Redirecting: /page");
+		return;
+	}
+
+	snprintf(strhdr, sizeof(strhdr), "Location: /newpage-%lu", b.chosen_record);
+	headers_table_append(headers_table, strhdr);
+	SET_HTTP_STATUS_AND_HDR(302, headers_table);
+	APP_WRITECS("Redirecting: /newpage...");
 }
 
 //#define IFREQ(page, fun) do{if(REQUEST_LEN==strizeof(page) and memcmp(REQUEST, page, strizeof(page)) == STREQ) return fun(a);}while(0)
