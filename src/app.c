@@ -82,6 +82,7 @@ const char default_header_nocache_3[] = "Expires: 0";
 
 #define LI_AND_A_TAGS_PREF "<li><a href=/tags?tag="
 #define LI_A_SUFF "</a></li>"
+#define LI_AND_A_PAGE_FULL_STR "<li><a href=/page>Add" LI_A_SUFF
 #define LI_AND_A_USER "<li><a href=/user>"
 #define LI_FULL_LOGIN_STR LI_AND_A_USER "Login" LI_A_SUFF
 #define LI_AND_A_LOGOUT_FULL_STR "<li><a href=/logout>Logout" LI_A_SUFF
@@ -256,7 +257,7 @@ bool is_user_legit(struct layer_context *l, struct usr *u) {
 	return true;
 }
 
-#define BUF_USERDISPLAY_CALC (sizeof(u->display_name)+strizeof(LI_AND_A_LOGOUT_FULL_STR)+strizeof(LI_AND_A_USER)+strizeof(LI_A_SUFF)+sizeof(char))
+#define BUF_USERDISPLAY_CALC (strizeof(LI_AND_A_PAGE_FULL_STR)+sizeof(u->display_name)+strizeof(LI_AND_A_LOGOUT_FULL_STR)+strizeof(LI_AND_A_USER)+strizeof(LI_A_SUFF)+sizeof(char))
 
 static void internal_server_error(reqargs a, const char *error) {
 	struct appcontext *con = CONTEXT;
@@ -281,7 +282,7 @@ static void internal_server_error(reqargs a, const char *error) {
 	char buffer[CBL_MAX(KEY_VAL_MAXKEYLEN, BUF_USERDISPLAY_CALC)];
 	ssize_t size = - ((ssize_t) sizeof(struct usr));
 	if (find_cookie_existence(a, "id", buffer) != 0 and key_val(buffer, u, &size, l, NULL) == true and is_user_valid(u) == true) {
-		size_t strsize = (size_t) sprintf(buffer, LI_AND_A_USER "%s" LI_A_SUFF LI_AND_A_LOGOUT_FULL_STR, u->display_name);
+		size_t strsize = (size_t) sprintf(buffer, LI_AND_A_PAGE_FULL_STR LI_AND_A_USER "%s" LI_A_SUFF LI_AND_A_LOGOUT_FULL_STR, u->display_name);
 		out[USER_PAGE_PART] = buffer;
 		outsizes[USER_PAGE_PART] = strsize;
 	}
@@ -315,7 +316,7 @@ static void notfound(reqargs a) {
 	char buffer[CBL_MAX(KEY_VAL_MAXKEYLEN, BUF_USERDISPLAY_CALC)];
 	ssize_t size = - ((ssize_t) sizeof(struct usr));
 	if (find_cookie_existence(a, "id", buffer) != 0 and key_val(buffer, u, &size, l, NULL) == true and is_user_valid(u) == true) {
-		size_t strsize = (size_t) sprintf(buffer, LI_AND_A_USER "%s" LI_A_SUFF LI_AND_A_LOGOUT_FULL_STR, u->display_name);
+		size_t strsize = (size_t) sprintf(buffer, LI_AND_A_PAGE_FULL_STR LI_AND_A_USER "%s" LI_A_SUFF LI_AND_A_LOGOUT_FULL_STR, u->display_name);
 		out[USER_PAGE_PART] = buffer;
 		outsizes[USER_PAGE_PART] = strsize;
 	}
@@ -373,6 +374,7 @@ static inline void selector_show_tag_processing(reqargs a, struct blog_record *b
 			APP_WRITE(LI_FULL_LOGIN_STR, strizeof(LI_FULL_LOGIN_STR));
 			break;
 		}
+		APP_WRITECS(LI_AND_A_PAGE_FULL_STR);
 		APP_WRITE(LI_AND_A_USER, strizeof(LI_AND_A_USER));
 		APP_WRITE(u->display_name, strlen(u->display_name));
 		APP_WRITE(LI_A_SUFF, strizeof(LI_A_SUFF));
@@ -532,6 +534,7 @@ static inline void record_show_tag_processing(reqargs a, int32_t tag, struct blo
 			APP_WRITE(LI_FULL_LOGIN_STR, strizeof(LI_FULL_LOGIN_STR));
 			break;
 		}
+		APP_WRITECS(LI_AND_A_PAGE_FULL_STR);
 		APP_WRITE(LI_AND_A_USER, strizeof(LI_AND_A_USER));
 		APP_WRITE(u->display_name, strlen(u->display_name));
 		APP_WRITE(LI_A_SUFF, strizeof(LI_A_SUFF));
@@ -639,6 +642,7 @@ static inline void user_panel_processing(reqargs a, int32_t tag, struct usr *u) 
 		APP_WRITE(u->display_name, strlen(u->display_name));
 		break;
 	case USER_PAGE_PART:
+		APP_WRITECS(LI_AND_A_PAGE_FULL_STR);
 		APP_WRITE(LI_AND_A_USER, strizeof(LI_AND_A_USER));
 		APP_WRITE(u->display_name, strlen(u->display_name));
 		APP_WRITE(LI_A_SUFF, strizeof(LI_A_SUFF));
@@ -846,6 +850,7 @@ static inline void editor_processing(reqargs a, int32_t tag, struct usr *u, char
 		APP_WRITE(default_add_edit_form_html, strizeof(default_add_edit_form_html));
 		break;
 	case USER_PAGE_PART:
+		APP_WRITECS(LI_AND_A_PAGE_FULL_STR);
 		APP_WRITE(LI_AND_A_USER, strizeof(LI_AND_A_USER));
 		APP_WRITE(u->display_name, strlen(u->display_name));
 		APP_WRITE(LI_A_SUFF, strizeof(LI_A_SUFF));
